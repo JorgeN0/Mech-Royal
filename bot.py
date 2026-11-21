@@ -88,10 +88,10 @@ PARAMS = {
     "farm_cap": 99.0,       # stop farming at this many cubes (stats cap at 10; more cubes only make us bigger)
     "laser_bonus": 150.0,   # weapon choice: metres of extra walking a rank point is worth (laser = rank 3; sim +0.35 vs 35)
     "scan_until_laser": 0.0,  # 1 = keep frequent 360-degree scans until we hold a laser (not just any weapon)
-    "scoot": 0.0,           # 1 = shoot-and-scoot: duck behind cover while the gun reloads and the laser cools down
+    "scoot": 1.0,           # 1 = shoot-and-scoot: duck behind cover while the gun reloads and the laser cools down
     "scoot_r": 30.0,        # ... only to cover this close
-    "hidden_reload": 0.0,   # 1 = top up the magazine whenever the target is out of sight
-    "anti_flank": 0.0,      # >0: weight of stepping away from two attackers that are on opposite sides of us
+    "hidden_reload": 1.0,   # 1 = top up the magazine whenever the target is out of sight
+    "anti_flank": 1.2,      # >0: weight of stepping away from two attackers that are on opposite sides of us
     "hunt": 1.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
     "hunt_s": 150.0,        # ... until this time (s)
     "hunt_reach": 300.0,    # ... and walk this far for a remembered laser while hunting
