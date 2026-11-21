@@ -41,7 +41,7 @@ UPGRADE_PRIORITY = {
     "lightning_range": 38, "reactor": 36, "gun_velocity": 34, "mortar_reload": 30,
     "lightning_chain": 28, "mortar_velocity": 22, "mortar_splash": 20, "laser_pierce": 18,
 }
-LOOT_RANK = {"laser": 3, "lightning": 2, "mortar": 2}
+LOOT_RANK = {"laser": 2, "lightning": 3, "mortar": 1}
 
 
 def loot_rank(kind, P=None):
