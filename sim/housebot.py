@@ -9,13 +9,14 @@ from world import AStar
 
 TAU = 2.0 * math.pi
 LEVELS = {
-    "easy": dict(sigma=0.045, lead=0.0, react=0.8, strafe=False, pref=45.0),
-    "medium": dict(sigma=0.028, lead=0.6, react=0.5, strafe=True, pref=55.0),
-    "hard": dict(sigma=0.016, lead=1.0, react=0.3, strafe=True, pref=60.0),
-    "expert": dict(sigma=0.008, lead=1.0, react=0.15, strafe=True, pref=60.0),
+    "easy": dict(sigma=0.065, lead=0.0, react=0.8, strafe=False, pref=45.0),
+    "medium": dict(sigma=0.04, lead=0.6, react=0.5, strafe=True, pref=55.0),
+    "hard": dict(sigma=0.024, lead=1.0, react=0.3, strafe=True, pref=60.0),
+    "expert": dict(sigma=0.012, lead=1.0, react=0.15, strafe=True, pref=60.0),
 }
 ORDER = ["easy"] * 4 + ["medium"] * 4 + ["hard"] * 4 + ["expert"] * 3
-SCHEDULE = dict(first_s=12.0, per_kill=1, all_s=300.0)
+# calibrated 2026-11-21 with trees on: kit example 1.43 (real 1.15), v1 3.64 (real 3.38)
+SCHEDULE = dict(first_s=12.0, per_kill=0.5, all_s=300.0)
 
 
 def wrap(a):
@@ -46,7 +47,7 @@ class Squad:
         elif t >= SCHEDULE["all_s"]:
             n = len(alive)
         else:
-            n = 1 + SCHEDULE["per_kill"] * dead
+            n = 1 + int(SCHEDULE["per_kill"] * dead)
         return set(b.id for b in alive[:n])
 
 
@@ -114,6 +115,19 @@ class HouseBot:
         move = (0.0, 0.0)
         aim = None
         fire = False
+        # a drone shooting us: shoot back (the real house bots surely do; they rarely die to drones)
+        for e in obs["events"]:
+            if e.get("type") == "damaged" and e.get("weapon") == "npc":
+                self.npc_foe = (e.get("by"), t)
+        foe = getattr(self, "npc_foe", None)
+        if not engage and foe is not None and t - foe[1] < 4.0:
+            n = next((m for m in obs["mechs"] if m["id"] == foe[0]), None)
+            if n is not None:
+                npz = n["pos"][2] + 1.75
+                yaw = math.atan2(n["pos"][1] - y, n["pos"][0] - x) + self.bias[0] * 0.5
+                pit = math.atan2(npz - (z + 7.0), hyp(n["pos"][0] - x, n["pos"][1] - y))
+                aim = [yaw, pit]
+                fire = abs(wrap(me["aim"][0] - yaw)) + abs(me["aim"][1] - pit) < 0.08
         if engage:
             hp_ = hero["pos"]
             d = hyp(hp_[0] - x, hp_[1] - y)

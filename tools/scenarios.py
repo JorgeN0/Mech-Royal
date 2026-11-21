@@ -143,6 +143,16 @@ def run():
     a = b.act(obs(t=1.1))
     check("goes for a remembered laser at 150 m with boost", b.mode == "weapon" and a["move"][0] > 0.5 and a.get("boost"), (b.mode, a))
 
+    # v5: free-for-all detector: 3 deaths that are not ours early -> FFA overrides (no farming)
+    b = make_bot(world=False)
+    b.act(obs(t=50, alive=16))
+    check("practice by default (farming on)", not b.ffa and b.P["farm_r"] > 0, (b.ffa, b.P["farm_r"]))
+    b.act(obs(t=60, alive=13))
+    check("3 unexplained deaths early -> FFA mode, farming off", b.ffa and b.P["farm_r"] == 0, (b.ffa, b.P["farm_r"]))
+    b2 = make_bot(world=False)
+    b2.act(obs(t=60, alive=14, events=[{"type": "kill", "target": 4}, {"type": "kill", "target": 6}]))
+    check("deaths we caused do not trigger FFA", not b2.ffa, b2.ffa)
+
     # v2: after a kill, loot the wreck even if another mech is far away
     b = make_bot(world=False)
     a = b.act(obs(mechs=[mech(7, (180, 0, 0))], cubes=[{"id": 5009, "pos": [-15, 0, 0]}]))

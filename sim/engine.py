@@ -293,7 +293,7 @@ class Match:
                  "score": 16 - (m.place or 16), "kills": m.kills, "cubes": m.cubes, "cause": m.death_cause,
                  "t_death": getattr(m, "t_death", None), "shots": m.shots, "hits": m.hits,
                  "weap": "+".join(wp["kind"] for wp in m.weapons if wp and wp["kind"] != "gun") or "-",
-                 "took_t": getattr(m, "took_t", None),
+                 "took_t": getattr(m, "took_t", None), "drops": getattr(m, "drops_got", 0),
                  "dmg_dealt": round(m.dmg_dealt), "dmg_taken": round(m.dmg_taken)} for m in self.mechs]
 
     def _decide(self):
@@ -331,9 +331,12 @@ class Match:
                 return False
             if abs(wrap(math.atan2(dy, dx) - o.aim[0])) > math.radians(self.vc["fov_deg"]) * 0.5:
                 return False
-        _, h = self.size(o)
         eye = (x, y, z + st["eye_height"] * (1 + self.cc["size_per_cube"] * o.cubes))
-        return self.w.los(eye, (tx, ty, tz_c)) or self.w.los(eye, (tx, ty, tz_top))
+        trees = getattr(self.w, "trees", None) if self.vc.get("canopy_blocks", True) else None
+        for tgt in ((tx, ty, tz_c), (tx, ty, tz_top)):
+            if self.w.los(eye, tgt) and (trees is None or not trees.blocks(eye, tgt)):
+                return True
+        return False
 
     def _vision(self):
         """vis[i] = set of mech/npc ids mech i sees now."""
@@ -352,8 +355,9 @@ class Match:
                 _, h = self.size(m)
                 if self.can_see(o, m.pos[0], m.pos[1], m.pos[2] + h * 0.5, m.pos[2] + h):
                     s.add(m.id)
-            for n in ([] if light else self.npcs):
-                if abs(n["pos"][0] - o.pos[0]) > 210 or abs(n["pos"][1] - o.pos[1]) > 210:
+            npc_r = 60 if light else 210  # stand-ins only need drones close enough to be shooting them
+            for n in self.npcs:
+                if abs(n["pos"][0] - o.pos[0]) > npc_r or abs(n["pos"][1] - o.pos[1]) > npc_r:
                     continue
                 h = self.cfg["npc"]["height"]
                 if self.can_see(o, n["pos"][0], n["pos"][1], n["pos"][2] + h * 0.5, n["pos"][2] + h):
@@ -1182,6 +1186,7 @@ class Match:
                         m.hp = m.max_hp
                         m.energy = m.stats["energy"]
                         m.events.append({"type": "drop", "id": d["id"], "cubes": m.cubes})
+                        m.drops_got = getattr(m, "drops_got", 0) + 1
                         continue
                 elif len(inside) == 0:
                     d["holder"] = None

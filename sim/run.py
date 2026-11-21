@@ -31,6 +31,9 @@ def _init():
         hello = json.loads(f.readline())
     _G["cfg"] = hello["config"]
     _G["world"] = World(os.path.join(ROOT, "arena"))
+    if os.environ.get("SIM_TREES", "1") != "0":  # SIM_TREES=0 turns canopy sight-blocking off
+        from sim.trees import TreeIndex
+        _G["world"].trees = TreeIndex(os.path.join(ROOT, "arena"))
 
 
 def run_one(args):
@@ -42,7 +45,10 @@ def run_one(args):
     from sim.loader import BotCtrl, load_bot_class
     for k, v in (overrides or {}).items():
         lvl, key = k.split(".")
-        housebot.LEVELS[lvl][key] = v
+        if lvl == "sched":  # e.g. sched.per_kill=0.5 sched.all_s=360
+            housebot.SCHEDULE[key] = v
+        else:
+            housebot.LEVELS[lvl][key] = v
     cfg, w = _G["cfg"], _G["world"]
     rng = random.Random(seed)
     arena = os.path.join(ROOT, "arena")
@@ -78,7 +84,11 @@ def run_one(args):
     res = m.run()
     wall = time.perf_counter() - t0
     timing = {c.name: (c.worst_ms, c.total_ms / max(1, c.n), getattr(c, "worst_at", None)) for c in ctrls if hasattr(c, "worst_ms")}
-    return {"seed": seed, "hero": hero, "spec": bots[0], "res": res, "wall": wall, "t_end": m.t, "timing": timing,
+    ffa = {}
+    for c in ctrls:
+        if hasattr(c, "bot"):
+            ffa.setdefault(c.name, []).append(getattr(c.bot, "ffa_t", None))
+    return {"seed": seed, "hero": hero, "spec": bots[0], "res": res, "wall": wall, "t_end": m.t, "timing": timing, "ffa": ffa,
             "log": m.log[:5]}
 
 
@@ -129,6 +139,7 @@ def main():
             took = [h["took_t"] for h in hs if h["took_t"] is not None]
             print("   weapons at death %s, first weapon taken in %d/%d matches (median t %.0f s)" % (
                 wk, len(took), len(hs), statistics.median(took) if took else -1))
+            print("   supply drops captured per match: %.2f" % statistics.mean(h.get("drops", 0) for h in hs))
             print("   score by weapon held: %s" % {k: "%.2f" % statistics.mean(h["score"] for h in hs if h["weap"] == k)
                                                   for k in wk})
             shots = sum(h["shots"] for h in hs)
@@ -160,6 +171,15 @@ def main():
             print("ffa %-16s score %.2f +- %.2f (n=%d) kills %.2f causes %s" % (
                 name, statistics.mean(sc), statistics.pstdev(sc) / max(1, len(sc)) ** 0.5, len(sc),
                 statistics.mean(r["kills"] for r in rs), causes))
+    det = {}
+    for o in out:
+        for k, ts in o.get("ffa", {}).items():
+            det.setdefault(k, []).extend(ts)
+    for k, ts in det.items():
+        hit = [t for t in ts if t is not None]
+        if hit or a.mode == "ffa":
+            print("FFA detector %-40s fired for %d/%d bots%s" % (k, len(hit), len(ts),
+                  (" (median t %.0f s)" % statistics.median(hit)) if hit else ""))
     tm = {}
     for o in out:
         for k, (worst, avg, at) in o["timing"].items():
