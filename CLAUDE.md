@@ -56,6 +56,8 @@ world.py            # map model: terrain, 2 m building grid, LOS raycast, time-s
 mechfight.py        # kit wrapper (stdlib only), copied from kit python/
 tools/navtest.py    # offline: grid stats, A* timing, PNG of the nav grid
 tools/scenarios.py  # offline: hand-made situations, asserts each behaviour branch
+sim/                # local simulator: engine.py (rules), housebot.py (practice squad), run.py, trace.py
+sim/bots/           # opponents/baselines: kit example_bot.py, v1_bot.py (snapshot of 81fef72)
 check/check.py      # kit conformance check (local testing only)
 check/stream.jsonl.gz
 arena/v2/world.json # map, for local testing (in a match it is mounted at /arena)
@@ -156,4 +158,7 @@ Open questions:
 - Fri 7 PM: kit unpacked, protocol read, repo being created. v1 survival bot next.
 - Fri night: v1 survival bot written (stdlib only). check.py PASS without Docker (max 2.4 ms); tools/scenarios.py 26/26. Docker Engine 29.1.3 installed in WSL Ubuntu (docker.io package); Docker check PASS (ready 634 ms, max answer 3.2 ms, image 176 MB).
 - v1 `81fef72` practice score **3.38** (23rd of 57; leader 5.17, baseline 1.15).
-- v2: commit to winning 1v1s (retreat only <28% HP, or <50% vs 2+ enemies / a healthier enemy), finish low-HP targets, ambush (stand still, pre-aimed) when the target is behind cover, wider early weapon search, loot wrecks when nobody is within 110 m, no NPC/crate fights while hurt, tighter gun fire gate. LOS verified against real hits (tools/losdiag.py: 8/9 agree).
+- v2: commit to winning 1v1s (retreat only <28% HP, or <50% vs 2+ enemies / a healthier enemy), finish low-HP targets, ambush (stand still, pre-aimed) when the target is behind cover, wider early weapon search, loot wrecks when nobody is within 110 m, no NPC/crate fights while hurt, tighter gun fire gate. LOS verified against real hits (tools/losdiag.py: 8/9 agree). Commit `4d6cade`, not yet submitted.
+- Simulator built (`python -m sim.run --mode practice --bots bot.py sim/bots/v1_bot.py --n 96`). Calibration: kit example 1.29 (real 1.15), v1 3.10 (real 3.38). Sim says v2 ≈ v1 (3.12). `--bots bot.py:key=val` overrides bot.PARAMS.
+- Sim findings: holding a laser ≈ 5.0 vs gun-only ≈ 2.0; we picked fights with idle house bots; NPC fire derailed loot trips.
+- v3: fight only threats (attackers, <50 m, aimed at us or closing, or nearly dead), remember pickups + 360° scans, boost to first weapon, grab a weapon mid-fight, kill attacking drones, laser swaps up to 150 m, fight at 100 m. Sim (fresh seeds, n=96): v3 3.66 vs v1 2.75.

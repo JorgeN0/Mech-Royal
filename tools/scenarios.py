@@ -67,7 +67,9 @@ def obs(t=30.0, pos=(0.0, 0.0, 0.0), aim=(0.0, 0.0), hp=1400, weapons=None, **kw
     return o
 
 
-def mech(id_, pos, vel=(0, 0, 0), hp=1400, weapons=("gun",), aim=(0, 0), charging=False):
+def mech(id_, pos, vel=(0, 0, 0), hp=1400, weapons=("gun",), aim=None, charging=False):
+    if aim is None:  # hostile by default: aimed at us (we stand at the origin in most scenarios)
+        aim = (math.atan2(-pos[1], -pos[0]), 0.0)
     return {"id": id_, "kind": "mech", "pos": list(pos), "vel": list(vel), "aim": list(aim), "hp": hp,
             "max_hp": 1400, "cubes": 0, "weapons": list(weapons), "charging": charging}
 
@@ -125,6 +127,21 @@ def run():
     check("hidden target -> stand still", b.mode == "fight" and math.hypot(*a["move"]) < 0.01, (b.mode, a["move"]))
     check("hidden target -> pre-aimed at it", abs(a["aim"][0] - exp) < 0.03, (a["aim"], exp))
     check("hidden target -> no fire", not any(a.get("fire", [False, False])), a)
+
+    # v3: leave a mech alone that is not coming for us
+    b = make_bot(world=False)
+    a = b.act(obs(mechs=[mech(5, (120, 0, 0), aim=(1.5, 0))]))
+    check("ignores a mech that is not hunting us", b.mode != "fight" and not any(a.get("fire", [False, False])), (b.mode, a))
+    # v3: a drone shooting us while healthy -> kill it
+    b = make_bot(world=False)
+    npc = {"id": 104, "kind": "npc", "pos": [30, 0, 0], "vel": [0, 0, 0], "aim": [3.1, 0], "hp": 350, "max_hp": 350}
+    a = b.act(obs(mechs=[npc], events=[{"type": "damaged", "amount": 25, "weapon": "npc", "bearing": 0.0, "by": 104}]))
+    check("drone attacking us -> fight it, not evade", b.mode == "npc", b.mode)
+    # v3: remembered weapon out of view -> walk (boost) to it
+    b = make_bot(world=False)
+    b.act(obs(t=1, pickups=[{"id": 8100, "kind": "laser", "pos": [150, 0, 0]}]))
+    a = b.act(obs(t=1.1))
+    check("goes for a remembered laser at 150 m with boost", b.mode == "weapon" and a["move"][0] > 0.5 and a.get("boost"), (b.mode, a))
 
     # v2: after a kill, loot the wreck even if another mech is far away
     b = make_bot(world=False)

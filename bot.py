@@ -41,7 +41,29 @@ UPGRADE_PRIORITY = {
     "lightning_range": 38, "reactor": 36, "gun_velocity": 34, "mortar_reload": 30,
     "lightning_chain": 28, "mortar_velocity": 22, "mortar_splash": 20, "laser_pierce": 18,
 }
-LOOT_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
+LOOT_RANK = {"laser": 3, "lightning": 2, "mortar": 2}
+
+# Tactics knobs (sim/run.py --botset key=value overrides these for experiments)
+PARAMS = {
+    "engage_r": 150.0,      # treat mechs closer than this as a fight
+    "retreat_hp": 0.28,     # always retreat below this HP fraction
+    "retreat_mid": 0.5,     # retreat below this if outnumbered or the enemy is healthier
+    "loot_close": 110.0,    # loot only when no enemy is closer than this
+    "pref_gun": 100.0,      # preferred fight distance with the gun (sim: 100 > 60)
+    "pref_lightning": 32.0,  # ... when we hold lightning
+    "pref_vs_lightning": 75.0,  # ... when they hold lightning and we don't
+    "pref_hurt_add": 25.0,  # extra distance when below 50% HP
+    "finish_hp": 0.3,       # close in on a lone target below this HP fraction
+    "ambush": 1.0,          # 1 = stand still pre-aimed when the target is behind cover
+    "close_r": 50.0,        # a mech this close is always a threat
+    "approach_v": 4.0,      # closing speed (m/s) that marks a mech as coming for us
+    "opportunist_hp": 0.35,  # attack a visible mech below this HP fraction within 120 m
+    "pick_fights": 0.0,     # 1 = old behaviour: fight anything within engage_r
+    "weapon_r_early": 220.0,  # how far to walk for a first weapon (remembered pickups)
+    "weapon_early_s": 150.0,  # ... during the first this-many seconds
+    "scan_every": 9.0,      # 360-degree torso sweep this often while calm and unarmed
+    "laser_swap_r": 150.0,  # walk this far to swap a lightning/mortar for a laser
+}
 ALERT_SOUNDS = {"gun", "mortar", "explosion", "laser", "laser_charge", "lightning", "step", "boost", "jet", "reload"}
 
 
@@ -97,6 +119,8 @@ class Bot:
         self.unstuck_dir = (1.0, 0.0)
         self.stuck_count = 0
         self.last_dmg_t = -1e9
+        self.last_mech_dmg_t = -1e9
+        self.npc_attacker = None  # (npc id, time)
         self.last_dealt_t = -1e9
         self.dmg_bearing = None
         self.attackers = {}  # id -> last time it hit us
@@ -112,6 +136,10 @@ class Bot:
         self.cmd_speed = 0.0
         self.worst_ms = 0.0
         self.n_act = 0
+        self.known_pk = {}  # pickup id -> (kind, pos); weapons on the ground never despawn
+        self.scan_start = -1e9
+        self.scan_base = 0.0
+        self.next_scan_t = 0.0
         gc.collect()
         if hasattr(gc, "freeze"):
             gc.freeze()
@@ -174,6 +202,7 @@ class Bot:
         self._zone(obs)
         enemies, npcs = self._perceive(obs)
         self.enemies = enemies
+        self._remember(obs)
 
         if obs.get("offer"):
             act["pick"] = self._pick_upgrade(obs["offer"])
@@ -234,10 +263,15 @@ class Bot:
                 if e.get("weapon") == "zone":
                     continue
                 self.last_dmg_t = t
+                by = e.get("by")
+                if e.get("weapon") == "npc" or (by is not None and by >= 100):
+                    self.npc_attacker = (by, t)
+                    continue
+                self.last_mech_dmg_t = t
                 if e.get("bearing") is not None:
                     self.dmg_bearing = e["bearing"]
-                if e.get("by") is not None:
-                    self.attackers[e["by"]] = t
+                if by is not None:
+                    self.attackers[by] = t
             elif ty == "hit":
                 self.last_dealt_t = t
         for s in obs.get("sounds") or ():
@@ -340,6 +374,8 @@ class Bot:
                 a = m.get("aim") or [0, 0]
                 back = math.atan2(-dy, -dx)
                 e["aimed"] = abs(wrap(a[0] - back)) < max(0.12, math.atan2(4.0, max(dh, 1.0)))
+                v = m.get("vel") or [0, 0, 0]
+                e["approach"] = -(dx * v[0] + dy * v[1]) / max(dh, 1.0)  # >0: closing on us
                 enemies.append(e)
                 if dh < 220:
                     self.last_mech_seen_t = t
@@ -350,10 +386,36 @@ class Bot:
             del self.attackers[k]
         return enemies, npcs
 
+    def _is_threat(self, e):
+        """Fight only what fights us (or is too close, or is easy to finish); leave the rest alone."""
+        P = PARAMS
+        if P["pick_fights"]:
+            return e["dh"] < P["engage_r"] or e["id"] in self.attackers
+        if e["id"] in self.attackers or e["dh"] < P["close_r"]:
+            return True
+        if e["dh"] < P["engage_r"] and (e.get("aimed") or e.get("approach", 0.0) > P["approach_v"]):
+            return True
+        hp, mhp = e.get("hp"), e.get("max_hp") or 1400
+        if hp is not None and hp / max(1.0, mhp) < P["opportunist_hp"] and e["dh"] < 120 and e.get("los"):
+            return True
+        return False
+
+    def _remember(self, obs):
+        x, y, z = self.pos
+        seen = set()
+        for pk in obs.get("pickups") or ():
+            self.known_pk[pk["id"]] = (pk.get("kind"), pk["pos"])
+            seen.add(pk["id"])
+        # forget pickups that should be in plain view (proximity sensors) but are not listed
+        gone = [k for k, (kind, p) in self.known_pk.items()
+                if k not in seen and hyp(p[0] - x, p[1] - y) < 30.0 and abs(p[2] - z) < 4.0]
+        for k in gone:
+            del self.known_pk[k]
+
     def _pick_target(self, enemies):
         best, bs = None, 1e18
         for e in enemies:
-            if e["dh"] > 240:
+            if e["dh"] > 240 or not self._is_threat(e):
                 continue
             s = e["dh"]
             if not e["los"]:
@@ -380,8 +442,9 @@ class Bot:
         self.loot_target = None
         boost_ok = self.energy > 25
 
-        engage_r = 150.0 if alive > 5 else 90.0
-        attacked = t - self.last_dmg_t < 3.0
+        P = PARAMS
+        engage_r = P["engage_r"] if alive > 5 else min(90.0, P["engage_r"])
+        attacked = t - self.last_mech_dmg_t < 3.0
         threat = target is not None and (target["dh"] < engage_r or target["id"] in self.attackers)
         n_close = sum(1 for e in self.enemies if e["dh"] < 150)
         t_hp = 1.0
@@ -392,7 +455,7 @@ class Bot:
         if self.retreating:
             if hp > 0.75 or (t - self.last_dmg_t > 7.0 and (target is None or not target["los"])):
                 self.retreating = False
-        elif threat and (hp < 0.28 or (hp < 0.5 and (n_close >= 2 or t_hp > hp + 0.15))):
+        elif threat and (hp < P["retreat_hp"] or (hp < P["retreat_mid"] and (n_close >= 2 or t_hp > hp + 0.15))):
             self.retreating = True
 
         # zone pressure first: still shoot on the way
@@ -403,7 +466,20 @@ class Bot:
             weak_one = t_hp < hp * 0.8 and n_close <= 1
             if self.retreating and not weak_one:
                 return "retreat", self._cover_point(target), 1.0, boost_ok and target["los"]
+            grab = self._near_weapon(35.0)
+            if grab is not None:
+                return "weapon", grab, 1.0, False  # unarmed and a weapon is right here: take it, still shooting
             return "fight", None, 1.0, False
+
+        # a drone is shooting us: it is 2 cubes for ~8 gun hits, so kill it unless we are hurt
+        if self.npc_attacker is not None and t - self.npc_attacker[1] < 3.0:
+            n = next((n for n in npcs if n["id"] == self.npc_attacker[0]), None)
+            if n is not None:
+                if hp > 0.45 and n["los"]:
+                    self.loot_target = n
+                    return "npc", None, 1.0, False
+                away = math.atan2(y - n["pos"][1], x - n["pos"][0])
+                return "evade", (x + 40 * math.cos(away), y + 40 * math.sin(away)), 1.0, False
 
         if attacked and self.dmg_bearing is not None:
             # hit by someone we cannot see: turn to face it (handled by aim) and keep moving to cover
@@ -418,7 +494,8 @@ class Bot:
             return "drop", drop, 1.0, False
 
         # loot when nobody is close (also right after a kill: the wreck drops cubes and weapons)
-        no_close = all(e["dh"] > 110.0 for e in self.enemies)
+        no_close = all(e["dh"] > P["loot_close"] and not (e["dh"] < 220 and e.get("approach", 0.0) > 3.0)
+                       for e in self.enemies)
         if (t - self.last_mech_seen_t > 6.0 or no_close) and self.zone_need < 0.45 * max(1.0, self.zone_avail):
             lg = self._loot_goal(obs, npcs)
             if lg is not None:
@@ -448,20 +525,25 @@ class Bot:
         s1 = self.weap[1] if len(self.weap) > 1 else None
         cur = LOOT_RANK.get(s1["kind"], 0) if s1 else 0
         held = {w["kind"] for w in self.weap if w}
-        best, bd = None, (120.0 if (early and cur == 0) else 60.0)
-        for pk in obs.get("pickups") or ():
-            k = pk.get("kind")
+        P = PARAMS
+        reach = P["weapon_r_early"] if (cur == 0 and self.t < P["weapon_early_s"]) else 60.0
+        best, bs = None, 1e18
+        for pid, (k, p) in self.known_pk.items():
             if k in held or LOOT_RANK.get(k, 0) <= cur:
                 continue
-            p = pk["pos"]
             if abs(p[2] - z) > 3.5:
                 continue
             d = hyp(p[0] - x, p[1] - y)
-            if d < bd and self._inside_live(p[0], p[1], 10):
-                best, bd = pk, d
+            r_ok = max(reach, P["laser_swap_r"]) if k == "laser" else reach  # the laser is worth a detour
+            if d > r_ok or not self._inside_live(p[0], p[1], 10):
+                continue
+            s = d - 35.0 * LOOT_RANK.get(k, 0)
+            if s < bs:
+                best, bs = p, s
         if best is not None:
-            p = best["pos"]
-            return "weapon", (p[0], p[1]), 1.0, False
+            # first weapon: run for it (energy is otherwise unused early)
+            first = cur == 0 and self.t < P["weapon_early_s"] and self.energy > 20
+            return "weapon", (best[0], best[1]), 1.0, first
         # 3) NPC drones (2 cubes each) only when healthy: hurt, we sit still and regenerate instead
         if hp > 0.8 and self.t < 330:
             best, bd = None, 95.0
@@ -490,6 +572,21 @@ class Bot:
                 goal = (p[0], p[1]) if bd > 12 else None
                 return "crate", goal, 1.0, False
         return None
+
+    def _near_weapon(self, reach):
+        """Goal (x, y) of a remembered weapon within reach if we hold no secondary, else None."""
+        if len(self.weap) > 1 and self.weap[1] is not None:
+            return None
+        x, y, z = self.pos
+        held = {w["kind"] for w in self.weap if w}
+        best, bd = None, reach
+        for k, p in self.known_pk.values():
+            if k in held or LOOT_RANK.get(k, 0) == 0 or abs(p[2] - z) > 3.5:
+                continue
+            d = hyp(p[0] - x, p[1] - y)
+            if d < bd:
+                best, bd = (p[0], p[1]), d
+        return best
 
     def _inside_live(self, px, py, margin):
         return hyp(px - self.live_c[0], py - self.live_c[1]) < self.live_r - margin
@@ -592,7 +689,8 @@ class Bot:
                 return 0.0, 0.0
             if mode == "crate":
                 return 0.0, 0.0
-            if mode == "fight" and not tg.get("los") and self.d_live_edge > 25.0:
+            P = PARAMS
+            if mode == "fight" and P["ambush"] and not tg.get("los") and self.d_live_edge > 25.0:
                 return 0.0, 0.0  # behind cover: wait silently, pre-aimed where it will reappear
             if t > self.strafe_flip_t:
                 self.strafe = -self.strafe
@@ -604,15 +702,15 @@ class Bot:
             else:
                 kinds = set(tg.get("weapons") or ())
                 mine = {w["kind"] for w in self.weap if w}
-                pref = 60.0
+                pref = P["pref_gun"]
                 if "lightning" in mine and "mortar" not in kinds:
-                    pref = 32.0
+                    pref = P["pref_lightning"]
                 elif "lightning" in kinds and "lightning" not in mine:
-                    pref = 75.0
+                    pref = max(pref, P["pref_vs_lightning"])
                 if self.hp_frac < 0.5:
-                    pref += 25.0
+                    pref += P["pref_hurt_add"]
                 thp = (tg.get("hp") or 1400) / max(1.0, tg.get("max_hp") or 1400)
-                if thp < 0.3 and sum(1 for e in self.enemies if e["dh"] < 150) <= 1:
+                if thp < P["finish_hp"] and sum(1 for e in self.enemies if e["dh"] < 150) <= 1:
                     pref = 28.0  # nearly dead and alone: close in and finish it
             radial = clamp((d - pref) / 25.0, -1.0, 1.0)
             px, py = -math.sin(b) * self.strafe, math.cos(b) * self.strafe
@@ -888,6 +986,16 @@ class Bot:
 
     def _idle_aim(self, mvx, mvy):
         t = self.t
+        P = PARAMS
+        calm = self.mode not in ("fight", "retreat", "zone", "evade") and t - self.last_dmg_t > 3.0
+        armed = len(self.weap) > 1 and self.weap[1] is not None
+        if calm and t >= self.next_scan_t and t - self.last_mech_seen_t > 4.0:
+            self.scan_start = t
+            self.scan_base = self.aim_now[0]
+            self.next_scan_t = t + P["scan_every"] * (2.5 if armed else 1.0)
+        if calm and t - self.scan_start < 1.7:
+            # 360-degree sweep: reveals loot and mechs out to vision range in every direction
+            return (wrap(self.scan_base + (t - self.scan_start) * self.turn_rate * 0.95), 0.0)
         # someone just hit us or made noise nearby: look there
         if t - self.last_dmg_t < 2.5 and self.dmg_bearing is not None:
             return (self.dmg_bearing, 0.0)
