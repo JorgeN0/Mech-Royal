@@ -94,7 +94,7 @@ PARAMS = {
     "scoot_r": 30.0,        # ... only to cover this close
     "hidden_reload": 1.0,   # 1 = top up the magazine whenever the target is out of sight
     "scoot_hit_hp": 0.0,    # >0: also duck into nearby cover when hit while below this HP fraction
-    "cover_tether": 0.0,    # >0: in a visible fight, drift to stay within this many m of the nearest hiding spot
+    "cover_tether": 14.0,    # >0: in a visible fight, drift to stay within this many m of the nearest hiding spot
     "anti_flank": 1.2,      # >0: weight of stepping away from two attackers that are on opposite sides of us
     "hunt": 1.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
     "hunt_s": 150.0,        # ... until this time (s)
