@@ -207,3 +207,4 @@ Open questions:
   - perfect lead vs OUR movement physics (accel 58.5): current strafe flips 0.9–2.2 s → 78/68/62% hittable at 60/80/100 m; flips 0.4–0.8 s → 45/29/20%; standing still 100%.
   - our perfect lead vs THEIR movement: 92/83/75/65/48/36% at 40/60/80/100/120/150 m.
 - weave knob (off): zigzag runs (retreat/scoot/evade/weapon/travel/...) while an enemy sees us, on the strafe timer. Experiments: exp/jink (strafe 0.4–0.8 s + weave 0.8), exp/jink-range (+ pref_gun 120).
+- Sim with all house levels leading (--set easy.lead=1 medium.lead=1): exp/jink +0.55 ± 0.35, jink-range +0.41; old sim +0.18 / +0.07. Follow-ups ready: exp/jink-heal (jink + heal_hp 0.6), exp/jink-fast (flips 0.3–0.6 s, weave 1.0).
