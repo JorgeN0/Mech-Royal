@@ -86,6 +86,10 @@ PARAMS = {
     "farm_npc_hp": 0.8,     # only fight drones above this HP fraction
     "farm_crate_hp": 0.7,   # only shoot crates above this HP fraction
     "farm_cap": 99.0,       # stop farming at this many cubes (stats cap at 10; more cubes only make us bigger)
+    "scoot": 0.0,           # 1 = shoot-and-scoot: duck behind cover while the gun reloads and the laser cools down
+    "scoot_r": 30.0,        # ... only to cover this close
+    "hidden_reload": 0.0,   # 1 = top up the magazine whenever the target is out of sight
+    "anti_flank": 0.0,      # >0: weight of stepping away from two attackers that are on opposite sides of us
     "ffa_detect": 1.0,      # 1 = switch to FFA_PARAMS once other mechs are clearly killing each other
     "ffa_early": 2.0,       # ... deaths not caused by us before t=120 s that mean free-for-all
     "ffa_any": 4.0,         # ... or this many at any time
@@ -273,7 +277,7 @@ class Bot:
         # ----- torso and weapons
         # only shoot mechs we are actually fighting (gunfire carries 320 m); otherwise loot targets
         aim_target = self.loot_target
-        if target is not None and (mode in ("fight", "retreat") or target["dh"] < 120.0 or target["id"] in self.attackers):
+        if target is not None and (mode in ("fight", "retreat", "scoot") or target["dh"] < 120.0 or target["id"] in self.attackers):
             aim_target = target
         self._weapons(act, aim_target, mvx, mvy)
 
@@ -551,6 +555,11 @@ class Bot:
             fboost = target["los"] and not has_lightning and self.energy > P["fight_boost_e"]
             if target["dh"] < P["pref_gun"] - 20.0 and self.energy > P["kite_boost_e"] and not has_lightning:
                 fboost = True  # kite: open the distance fast
+            if P["scoot"] and target["los"] and self._reloading_exposed(target):
+                # shoot-and-scoot: nothing to fire for a couple of seconds, so get out of its sight
+                cp = self._cover_point(target)
+                if cp is not None and hyp(cp[0] - x, cp[1] - y) < P["scoot_r"]:
+                    return "scoot", cp, 1.0, self.energy > 30
             return "fight", None, 1.0, fboost
 
         # a drone is shooting us: it is 2 cubes for ~8 gun hits, so kill it unless we are hurt
@@ -785,6 +794,26 @@ class Bot:
         self.cover_pt = best
         return best
 
+    def _reloading_exposed(self, target):
+        """True when we have nothing to shoot for a while: gun reloading and no other weapon ready."""
+        gun = next((w for w in self.weap if w and w.get("kind") == "gun"), None)
+        if gun is None:
+            return False
+        if not (float(gun.get("reload", 0) or 0) > 0.4 or int(gun.get("ammo", 1) or 0) == 0):
+            return False
+        for w in self.weap:
+            if not w or w.get("kind") == "gun":
+                continue
+            ready = float(w.get("cooldown", 0) or 0) < 0.3
+            k = w.get("kind")
+            if k == "laser" and (ready or float(w.get("charge", 0) or 0) > 0):
+                return False
+            if k == "lightning" and ready and target["dh"] < float(w.get("stats", {}).get("range", 45)):
+                return False
+            if k == "mortar" and ready and 28.0 < target["dh"] < 215.0:
+                return False
+        return True
+
     def _cover_from_bearing(self, bearing):
         fake = {"pos": [self.pos[0] + 80 * math.cos(bearing), self.pos[1] + 80 * math.sin(bearing), self.pos[2]], "h": 9}
         return self._cover_point(fake)
@@ -827,6 +856,22 @@ class Bot:
             px, py = -math.sin(b) * self.strafe * sw, math.cos(b) * self.strafe * sw
             mx = math.cos(b) * radial + px
             my = math.sin(b) * radial + py
+            if mode == "fight" and P["anti_flank"] > 0:
+                # a second attacker behind us hits our back for x1.5: step away from both to bring it in front
+                ux, uy = math.cos(b), math.sin(b)
+                for e in self.enemies:
+                    if e is tg or not e.get("los") or e["dh"] > 150 or not self._is_threat(e):
+                        continue
+                    if abs(wrap(e["bearing"] - b)) > math.radians(100):
+                        vx, vy = ux + math.cos(e["bearing"]), uy + math.sin(e["bearing"])
+                        sn = hyp(vx, vy)
+                        if sn > 0.3:
+                            ax, ay = -vx / sn, -vy / sn
+                        else:  # almost opposite: sidestep off the line between them
+                            ax, ay = -uy * self.strafe, ux * self.strafe
+                        mx += P["anti_flank"] * ax
+                        my += P["anti_flank"] * ay
+                        break
             # do not drift out of the zone while fighting
             zx, zy = self.next_c[0] - x, self.next_c[1] - y
             zd = hyp(zx, zy)
@@ -1080,9 +1125,13 @@ class Bot:
                 li, lw = slots["laser"]
                 if float(lw.get("charge", 0) or 0) > 0:
                     fire[li] = True
-            if gun is not None and int(gun.get("ammo", 12) or 0) < int(gun.get("stats", {}).get("mag", 12)) * 0.5 \
-                    and float(gun.get("reload", 0) or 0) <= 0 and t - self.last_mech_seen_t > 2.0:
-                reload = True
+            if gun is not None and float(gun.get("reload", 0) or 0) <= 0:
+                ammo = int(gun.get("ammo", 12) or 0)
+                mag = int(gun.get("stats", {}).get("mag", 12))
+                if ammo < mag * 0.5 and t - self.last_mech_seen_t > 2.0:
+                    reload = True
+                elif self.P["hidden_reload"] and target is not None and ammo < mag * 0.6:
+                    reload = True  # target out of sight: start the next exposure with a full magazine
 
         if gun is not None and int(gun.get("ammo", 1) or 0) == 0 and float(gun.get("reload", 0) or 0) <= 0:
             reload = True
