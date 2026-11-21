@@ -82,17 +82,17 @@ PARAMS = {
     "heal_hp": 0.0,         # >0: with no threat in sight and HP below this, hide at cover and regenerate
     "kite_strafe": 1.0,     # sideways weight while backing off to preferred distance (lower = back off faster)
     "kite_boost_e": 999.0,  # boost while backing off from a closer-than-preferred target if energy is above this
-    "farm_r": 250.0,        # walk this far to remembered drones/crates for cubes (0 = only ones in view; sim +0.8)
+    "farm_r": 0.0,        # walk this far to remembered drones/crates for cubes (0 = only ones in view; sim +0.8)
     "farm_npc_hp": 0.8,     # only fight drones above this HP fraction
     "farm_crate_hp": 0.7,   # only shoot crates above this HP fraction
     "farm_cap": 99.0,       # stop farming at this many cubes (stats cap at 10; more cubes only make us bigger)
-    "laser_bonus": 150.0,   # weapon choice: metres of extra walking a rank point is worth (laser = rank 3; sim +0.35 vs 35)
+    "laser_bonus": 35.0,   # weapon choice: metres of extra walking a rank point is worth (laser = rank 3; sim +0.35 vs 35)
     "scan_until_laser": 0.0,  # 1 = keep frequent 360-degree scans until we hold a laser (not just any weapon)
     "scoot": 0.0,           # 1 = shoot-and-scoot: duck behind cover while the gun reloads and the laser cools down
     "scoot_r": 30.0,        # ... only to cover this close
     "hidden_reload": 0.0,   # 1 = top up the magazine whenever the target is out of sight
     "anti_flank": 0.0,      # >0: weight of stepping away from two attackers that are on opposite sides of us
-    "hunt": 1.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
+    "hunt": 0.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
     "hunt_s": 150.0,        # ... until this time (s)
     "hunt_reach": 300.0,    # ... and walk this far for a remembered laser while hunting
     "laser_tol": 0.8,       # release the laser when aim error < atan(tol * target radius / distance)
