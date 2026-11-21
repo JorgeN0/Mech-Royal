@@ -178,3 +178,10 @@ Open questions:
 - Apex Legends movement techs (sim/bots/apex_bot.py, a copy of bot.py + knobs): jump-strafe juke, ADAD stutter stops, jet-hop dodge of charging lasers. Practice: juke +0.14 ± 0.21 (noise), stutter −0.21; FFA: juke 7.69 vs 7.61 (noise), laser dodge 7.27 (worse). Not merged. Why: direction changes take ~0.4 s (accel 58.5), a 2.75 m hop doesn't leave a 9 m hitbox, lasers are hitscan, and air control is weak. Noise floor: two identical bots differ by ±0.17 paired at n=192 (A* time slices make runs non-repeatable).
 - Rooftop anchor merged in `72be390` (off by default); see HANDOFF-rooftop-anchor.md. v6 real score: 4.27 per the handoff (Jorge recalled ~4.8). Leaderboard Sat midday: 262 teams, top 6.31, top-50 floor 5.15; we are outside the top 32 that qualify for the final.
 - v7: (1) search budget 28 → 14 ms: acts > 20 ms in the sim went from 0.8% of decisions to ~0 (the real server drops answers > 50 ms; the 1-CPU box is slower than ours). (2) **laser hunt** (`hunt`): with no laser, early and calm, explore unseen ground in ~120 m hops and scan on arrival; walk up to 300 m to a remembered laser. Paired +0.20 ± 0.17 then **+0.46 ± 0.21** on fresh seeds; FFA 7.53 vs 7.47. Tested, no gain: laser_tol 1.2 (−0.10), laser_lead 0.12 (−0.03), laser-first upgrades (+0.01), late anchor (anchor_t 250 + farming, −0.07: we rarely live to 250 s).
+- **Real board (Sat 12:30): v3 4.17, v5 4.25, v6 4.27 and 4.40 (same commit twice: noise ±0.15), v7 4.13.** Rank 105/265; top-32 cutoff 5.38; leader 6.31. Sim gains since v3 (+0.5–1.0 in sim) have NOT transferred. "wait N ms" on the submissions list is queue wait, not answer time. No debug-file download is offered in the UI.
+- **New method: real-board experiments** on branches (submit by commit hash), each one bold change from v7, to learn which direction the real game rewards:
+  - exp/roof `80574b5` anchor=1, anchor_laser=0 (climb a roof early, hold)
+  - exp/aggro `7e271f9` pick_fights=1, engage_r=200
+  - exp/noloot `84f6f57` farm_r=0, hunt=0, laser_bonus=35
+  - exp/range `77b90fe` pref_gun=180
+  - exp/hide `80c2291` passive: engage_r 70, close_r 40, no farming/hunt/opportunism, plating first
