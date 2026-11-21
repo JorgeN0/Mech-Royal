@@ -52,7 +52,7 @@ def loot_rank(kind, P=None):
 
 # Tactics knobs (sim/run.py --botset key=value overrides these for experiments)
 PARAMS = {
-    "engage_r": 150.0,      # treat mechs closer than this as a fight
+    "engage_r": 200.0,      # treat mechs closer than this as a fight
     "retreat_hp": 0.28,     # always retreat below this HP fraction
     "retreat_mid": 0.5,     # retreat below this if outnumbered or the enemy is healthier
     "loot_close": 110.0,    # loot only when no enemy is closer than this
@@ -65,7 +65,7 @@ PARAMS = {
     "close_r": 50.0,        # a mech this close is always a threat
     "approach_v": 4.0,      # closing speed (m/s) that marks a mech as coming for us
     "opportunist_hp": 0.35,  # attack a visible mech below this HP fraction within 120 m
-    "pick_fights": 0.0,     # 1 = old behaviour: fight anything within engage_r
+    "pick_fights": 1.0,     # 1 = old behaviour: fight anything within engage_r
     "weapon_r_early": 220.0,  # how far to walk for a first weapon (remembered pickups)
     "weapon_early_s": 150.0,  # ... during the first this-many seconds
     "scan_every": 9.0,      # 360-degree torso sweep this often while calm and unarmed
