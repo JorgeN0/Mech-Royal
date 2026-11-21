@@ -383,12 +383,16 @@ class Bot:
         engage_r = 150.0 if alive > 5 else 90.0
         attacked = t - self.last_dmg_t < 3.0
         threat = target is not None and (target["dh"] < engage_r or target["id"] in self.attackers)
+        n_close = sum(1 for e in self.enemies if e["dh"] < 150)
+        t_hp = 1.0
+        if target is not None and target.get("hp") is not None:
+            t_hp = target["hp"] / max(1.0, target.get("max_hp") or 1400)
 
-        # retreat hysteresis
+        # retreat hysteresis: commit to fights we are winning; leave ones we are losing
         if self.retreating:
-            if hp > 0.72 or (t - self.last_dmg_t > 7.0 and (target is None or not target["los"])):
+            if hp > 0.75 or (t - self.last_dmg_t > 7.0 and (target is None or not target["los"])):
                 self.retreating = False
-        elif hp < 0.42 and threat:
+        elif threat and (hp < 0.28 or (hp < 0.5 and (n_close >= 2 or t_hp > hp + 0.15))):
             self.retreating = True
 
         # zone pressure first: still shoot on the way
@@ -396,8 +400,7 @@ class Bot:
             return "zone", self.zone_goal, 1.0, (self.energy > 8 and (self.outside or self.zone_need > 0.5 * self.zone_avail))
 
         if threat:
-            weak_one = (target.get("hp") is not None and target["hp"] / max(1.0, target.get("max_hp") or 1400) < hp * 0.7
-                        and sum(1 for e in self.enemies if e["dh"] < 150) <= 1)
+            weak_one = t_hp < hp * 0.8 and n_close <= 1
             if self.retreating and not weak_one:
                 return "retreat", self._cover_point(target), 1.0, boost_ok and target["los"]
             return "fight", None, 1.0, False
@@ -414,8 +417,9 @@ class Bot:
         if drop is not None:
             return "drop", drop, 1.0, False
 
-        # cheap loot when nobody has been seen recently
-        if t - self.last_mech_seen_t > 6.0 and self.zone_need < 0.45 * max(1.0, self.zone_avail):
+        # loot when nobody is close (also right after a kill: the wreck drops cubes and weapons)
+        no_close = all(e["dh"] > 110.0 for e in self.enemies)
+        if (t - self.last_mech_seen_t > 6.0 or no_close) and self.zone_need < 0.45 * max(1.0, self.zone_avail):
             lg = self._loot_goal(obs, npcs)
             if lg is not None:
                 return lg
@@ -428,8 +432,9 @@ class Bot:
     def _loot_goal(self, obs, npcs):
         x, y, z = self.pos
         hp = self.hp_frac
+        early = self.t < 90.0
         # 1) cubes on the ground nearby
-        best, bd = None, 70.0
+        best, bd = None, 90.0
         for c in obs.get("cubes") or ():
             p = c["pos"]
             if abs(p[2] - z) > 3.5:
@@ -443,7 +448,7 @@ class Bot:
         s1 = self.weap[1] if len(self.weap) > 1 else None
         cur = LOOT_RANK.get(s1["kind"], 0) if s1 else 0
         held = {w["kind"] for w in self.weap if w}
-        best, bd = None, 60.0
+        best, bd = None, (120.0 if (early and cur == 0) else 60.0)
         for pk in obs.get("pickups") or ():
             k = pk.get("kind")
             if k in held or LOOT_RANK.get(k, 0) <= cur:
@@ -457,8 +462,8 @@ class Bot:
         if best is not None:
             p = best["pos"]
             return "weapon", (p[0], p[1]), 1.0, False
-        # 3) NPC drones (2 cubes each) when healthy
-        if hp > 0.6 and self.t < 330:
+        # 3) NPC drones (2 cubes each) only when healthy: hurt, we sit still and regenerate instead
+        if hp > 0.8 and self.t < 330:
             best, bd = None, 95.0
             for n in npcs:
                 if n["dh"] < bd and n["los"] and self._inside_live(n["pos"][0], n["pos"][1], 0):
@@ -466,8 +471,8 @@ class Bot:
             if best is not None:
                 self.loot_target = best
                 return "npc", None, 1.0, False
-        # 4) crates (1 cube, maybe a weapon)
-        if self.t < 360:
+        # 4) crates (1 cube, maybe a weapon); hitting them may reset regen, so not while hurt
+        if self.t < 360 and hp > 0.7:
             best, bd = None, 75.0
             for c in obs.get("crates") or ():
                 p = c["pos"]
@@ -587,6 +592,8 @@ class Bot:
                 return 0.0, 0.0
             if mode == "crate":
                 return 0.0, 0.0
+            if mode == "fight" and not tg.get("los") and self.d_live_edge > 25.0:
+                return 0.0, 0.0  # behind cover: wait silently, pre-aimed where it will reappear
             if t > self.strafe_flip_t:
                 self.strafe = -self.strafe
                 self.strafe_flip_t = t + self.rng.uniform(0.9, 2.2)
@@ -604,6 +611,9 @@ class Bot:
                     pref = 75.0
                 if self.hp_frac < 0.5:
                     pref += 25.0
+                thp = (tg.get("hp") or 1400) / max(1.0, tg.get("max_hp") or 1400)
+                if thp < 0.3 and sum(1 for e in self.enemies if e["dh"] < 150) <= 1:
+                    pref = 28.0  # nearly dead and alone: close in and finish it
             radial = clamp((d - pref) / 25.0, -1.0, 1.0)
             px, py = -math.sin(b) * self.strafe, math.cos(b) * self.strafe
             mx = math.cos(b) * radial + px
@@ -831,8 +841,8 @@ class Bot:
                     aim = (yaw, pit)
                     aimed_weapon = "gun"
                 if dd < rng_ * 0.98 and int(gw.get("ammo", 1) or 0) > 0 and float(gw.get("reload", 0) or 0) <= 0:
-                    slew_y = self.turn_rate * 0.025
-                    slew_p = self.pitch_rate * 0.025
+                    slew_y = self.turn_rate * 0.0125
+                    slew_p = self.pitch_rate * 0.0125
                     err_y = max(0.0, abs(wrap(ay - yaw)) - (slew_y if aimed_weapon == "gun" else 0))
                     err_p = max(0.0, abs(ap - pit) - (slew_p if aimed_weapon == "gun" else 0))
                     tol_y = math.atan2(rad * 0.85, max(dd, 1.0)) + 0.004
@@ -850,6 +860,11 @@ class Bot:
                         and self.energy > float(ls.get("energy", 3)) + 6):
                     fire[li] = True
         else:
+            if target is not None and target.get("pos") is not None:
+                # tracked behind cover: pre-aim (yaw and pitch) so we fire the moment it reappears
+                yaw, pit, _, _ = self._lead_aim(target["pos"], target.get("vel") or [0, 0, 0],
+                                                target.get("h", 9) * 0.5, float(self.wcfg.get("gun", {}).get("speed", 252)))
+                aim = (yaw, pit)
             # keep a charged laser from wasting itself: release only if it would auto-fire anyway
             if "laser" in slots:
                 li, lw = slots["laser"]

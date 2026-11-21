@@ -101,6 +101,36 @@ def run():
     check("retreat moves away from enemy", mv[0] < 0, mv)
     check("retreat still faces the enemy", abs(a["aim"][0]) < 0.05, a["aim"])
 
+    # v2: commit to a 1v1 we are winning, even when hurt
+    b = make_bot(world=False)
+    a = b.act(obs(mechs=[mech(5, (50, 0, 0), hp=350)], hp=600))
+    check("hurt but winning 1v1 -> keep fighting", b.mode == "fight", b.mode)
+    b = make_bot(world=False)
+    a = b.act(obs(mechs=[mech(5, (50, 0, 0), hp=1400)], hp=600))
+    check("hurt and losing -> retreat", b.mode == "retreat", b.mode)
+
+    # v2: target tracked behind cover -> stand still, pre-aimed at it
+    b = make_bot(world=False)
+    orig = b._perceive
+
+    def hidden(o, _orig=orig):
+        en, np_ = _orig(o)
+        for e in en:
+            e["los"] = False
+        return en, np_
+    b._perceive = hidden
+    a = b.act(obs(mechs=[mech(5, (70, 20, 0))], events=[{"type": "damaged", "amount": 45, "weapon": "gun",
+                                                          "bearing": 0.3, "by": 5}]))
+    exp = math.atan2(20, 70)
+    check("hidden target -> stand still", b.mode == "fight" and math.hypot(*a["move"]) < 0.01, (b.mode, a["move"]))
+    check("hidden target -> pre-aimed at it", abs(a["aim"][0] - exp) < 0.03, (a["aim"], exp))
+    check("hidden target -> no fire", not any(a.get("fire", [False, False])), a)
+
+    # v2: after a kill, loot the wreck even if another mech is far away
+    b = make_bot(world=False)
+    a = b.act(obs(mechs=[mech(7, (180, 0, 0))], cubes=[{"id": 5009, "pos": [-15, 0, 0]}]))
+    check("loots wreck cubes while others are far", b.mode == "cube", b.mode)
+
     # laser: starts charging, releases when full and on target
     gun = wep("gun", ammo=12, reload=0)
     b = make_bot(world=False)

@@ -154,4 +154,6 @@ Open questions:
 
 ## 8. Status log
 - Fri 7 PM: kit unpacked, protocol read, repo being created. v1 survival bot next.
-- Fri night: v1 survival bot written (stdlib only). check.py PASS without Docker (max 2.4 ms); tools/scenarios.py 26/26. Docker Engine 29.1.3 installed in WSL Ubuntu (docker.io package); Docker check PASS (ready 634 ms, max answer 3.2 ms, image 176 MB). Not yet committed or submitted.
+- Fri night: v1 survival bot written (stdlib only). check.py PASS without Docker (max 2.4 ms); tools/scenarios.py 26/26. Docker Engine 29.1.3 installed in WSL Ubuntu (docker.io package); Docker check PASS (ready 634 ms, max answer 3.2 ms, image 176 MB).
+- v1 `81fef72` practice score **3.38** (23rd of 57; leader 5.17, baseline 1.15).
+- v2: commit to winning 1v1s (retreat only <28% HP, or <50% vs 2+ enemies / a healthier enemy), finish low-HP targets, ambush (stand still, pre-aimed) when the target is behind cover, wider early weapon search, loot wrecks when nobody is within 110 m, no NPC/crate fights while hurt, tighter gun fire gate. LOS verified against real hits (tools/losdiag.py: 8/9 agree).
