@@ -80,6 +80,10 @@ def run_one(args):
             else:
                 ctrls[i] = BotCtrl(load_bot_class(spec, w), hello(i), spec)
     m = Match(cfg, w, ctrls, seed=seed, mode=mode, hero=hero)
+    for i, c in enumerate(ctrls):  # house levels with a laser get one at spawn
+        lvl = getattr(c, "level", None)
+        if lvl and housebot.LEVELS.get(lvl, {}).get("laser"):
+            m.mechs[i].weapons[1] = m._new_weapon(m.mechs[i], "laser")
     t0 = time.perf_counter()
     res = m.run()
     wall = time.perf_counter() - t0

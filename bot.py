@@ -46,6 +46,8 @@ LOOT_RANK = {"laser": 3, "lightning": 2, "mortar": 2}
 
 def loot_rank(kind, P=None):
     P = PARAMS if P is None else P
+    if P.get("lightning_first", 0.0):
+        return {"lightning": 3, "laser": 2, "mortar": 1}.get(kind, 0)
     if kind == "mortar" and not P.get("use_mortar", 1.0):
         return 0
     return LOOT_RANK.get(kind, 0)
@@ -98,6 +100,13 @@ PARAMS = {
     "laser_tol": 0.8,       # release the laser when aim error < atan(tol * target radius / distance)
     "laser_lead": 0.08,     # seconds of target motion to lead the (hitscan) laser by
     "upg_laser": 0.0,       # 1 = with a laser in hand, take laser damage/charge upgrades first
+    "ambush_move": 0.0,     # >0: strafe sideways at this fraction of speed while waiting pre-aimed (do not stand still)
+    "loot_strafe": 0.0,     # 1 = strafe while shooting crates (do not stand still)
+    "hit_backoff_s": 0.0,   # >0: after taking mech damage in a fight, back away for this many seconds (still shooting)
+    "jet_evade_s": 0.0,     # >0: for this long after taking mech damage, jump + boost (jet up / sprint): bots track movers badly
+    "jet_evade_e": 30.0,    # ... only with at least this much energy
+    "tp_seek": 0.0,         # 1 = third-party: with no threat, move toward fights we hear (others shooting, not at us)
+    "lightning_first": 0.0, # 1 = rank lightning above the laser (close-range play); the hunt then seeks lightning
     "anchor": 0.0,          # 1 = Siege-style rooftop anchor: climb a roof inside the next circle and hold its centre
     "anchor_laser": 1.0,    # ... only once we hold a laser (0 = with any loadout)
     "anchor_t": 0.0,        # ... not before this time (s)
@@ -190,6 +199,7 @@ class Bot:
         self.ffa_t = None
         self.visited = []  # (x, y) of places we scanned from, for the laser hunt
         self.hunt_goal = None
+        self.fight_sounds = []  # (t, bearing, dist class) of combat we heard that was not aimed at us
         self.known_npc = {}  # drone id -> pos (drones stay near home)
         self.known_crate = {}  # crate id -> pos (crates never move)
         # telemetry, written into the debug drawing (downloadable by our team after real matches)
@@ -310,6 +320,12 @@ class Bot:
             boost = self.energy > 5
         if not climbing:
             self._stuck_check(mvx, mvy, mode)
+        P = self.P
+        if P["jet_evade_s"] > 0 and t - self.last_mech_dmg_t < P["jet_evade_s"] and self.energy > P["jet_evade_e"]                 and mode in ("fight", "retreat", "scoot", "evade", "weapon"):
+            # taking fire: get moving fast, and upward (house bots aim where we were and miss climbing targets)
+            boost = True
+            if me.get("grounded"):
+                jump = True
         act["move"] = [round(mvx, 3), round(mvy, 3)]
         act["boost"] = bool(boost)
         if jump:
@@ -378,6 +394,11 @@ class Bot:
                     self.attackers[by] = t
             elif ty == "hit":
                 self.last_dealt_t = t
+        for s in obs.get("sounds") or ():
+            if s.get("kind") in ("gun", "laser", "lightning", "explosion", "mortar") and s.get("dist") in ("near", "mid")                     and t - self.last_mech_dmg_t > 1.0:
+                self.fight_sounds.append((t - float(s.get("age", 0)), float(s["bearing"]), s.get("dist")))
+        if len(self.fight_sounds) > 40:
+            del self.fight_sounds[:20]
         for s in obs.get("sounds") or ():
             if s.get("kind") in ALERT_SOUNDS and s.get("dist") in ("near", "mid"):
                 if self.alert is None or s.get("dist") == "near" or t - self.alert[0] > 1.0:
@@ -638,6 +659,16 @@ class Bot:
                 return "heal", self._cover_from_bearing(self.dmg_bearing), 1.0, False
             return "heal", self._hold_point(), 1.0, False
 
+        if P["tp_seek"] and hp > 0.6:
+            recent = [fs for fs in self.fight_sounds if t - fs[0] < 3.0]
+            if len(recent) >= 2:
+                bx = sum(math.cos(fs[1]) for fs in recent)
+                by = sum(math.sin(fs[1]) for fs in recent)
+                b_ = math.atan2(by, bx)
+                gx, gy = x + 70.0 * math.cos(b_), y + 70.0 * math.sin(b_)
+                if self._inside_live(gx, gy, 15):
+                    return "seek", (gx, gy), 1.0, False  # a fight nearby: arrive while they are weakened
+
         # supply drop when nobody is around
         drop = self._drop_goal(obs)
         if drop is not None:
@@ -691,8 +722,9 @@ class Bot:
             if abs(p[2] - z) > 3.5:
                 continue
             d = hyp(p[0] - x, p[1] - y)
-            r_ok = max(reach, P["laser_swap_r"]) if k == "laser" else reach  # the laser is worth a detour
-            if k == "laser" and P["hunt"] and self.t < P["hunt_s"]:
+            pref_k = "lightning" if P["lightning_first"] else "laser"
+            r_ok = max(reach, P["laser_swap_r"]) if k == pref_k else reach  # the preferred weapon is worth a detour
+            if k == pref_k and P["hunt"] and self.t < P["hunt_s"]:
                 r_ok = max(r_ok, P["hunt_reach"])
             if d > r_ok or not self._inside_live(p[0], p[1], 10):
                 continue
@@ -748,7 +780,8 @@ class Bot:
             if best is not None:
                 return "farm", (best[0], best[1]), 1.0, False
         # 6) laser hunt: no laser yet, so go and look where we have not looked
-        if self.P["hunt"] and self.t < self.P["hunt_s"] and not any(w and w.get("kind") == "laser" for w in self.weap):
+        pref_k = "lightning" if self.P["lightning_first"] else "laser"
+        if self.P["hunt"] and self.t < self.P["hunt_s"] and not any(w and w.get("kind") == pref_k for w in self.weap):
             g = self._hunt_goal()
             if g is not None:
                 return "hunt", g, 1.0, False
@@ -1007,11 +1040,19 @@ class Bot:
             tg = target if mode == "fight" else self.loot_target
             if tg is None:
                 return 0.0, 0.0
-            if mode == "crate":
-                return 0.0, 0.0
             P = self.P
+            if mode == "crate" and not P["loot_strafe"]:
+                return 0.0, 0.0
             if mode == "fight" and P["ambush"] and not tg.get("los") and self.d_live_edge > 25.0:
-                return 0.0, 0.0  # behind cover: wait silently, pre-aimed where it will reappear
+                if P["ambush_move"] <= 0:
+                    return 0.0, 0.0  # behind cover: wait silently, pre-aimed where it will reappear
+                if t > self.strafe_flip_t:
+                    self.strafe = -self.strafe
+                    self.strafe_flip_t = t + self.rng.uniform(P["strafe_min"], P["strafe_max"])
+                bb = tg["bearing"]  # pre-aimed, but keep sliding sideways: still targets are easy targets
+                vx, vy = -math.sin(bb) * self.strafe, math.cos(bb) * self.strafe
+                vx, vy = self._avoid(vx, vy, flip=True)
+                return vx * P["ambush_move"], vy * P["ambush_move"]
             if t > self.strafe_flip_t:
                 self.strafe = -self.strafe
                 self.strafe_flip_t = t + self.rng.uniform(self.P["strafe_min"], self.P["strafe_max"])
@@ -1019,6 +1060,8 @@ class Bot:
             d = tg["dh"]
             if mode == "npc":
                 pref = 55.0
+            elif mode == "crate":
+                pref = clamp(d, 15.0, 45.0)  # circle the crate at our current distance while shooting it
             else:
                 kinds = set(tg.get("weapons") or ())
                 mine = {w["kind"] for w in self.weap if w}
@@ -1033,6 +1076,8 @@ class Bot:
                 if thp < P["finish_hp"] and sum(1 for e in self.enemies if e["dh"] < 150) <= 1:
                     pref = 28.0  # nearly dead and alone: close in and finish it
             radial = clamp((d - pref) / 25.0, -1.0, 1.0)
+            if mode == "fight" and P["hit_backoff_s"] > 0 and t - self.last_mech_dmg_t < P["hit_backoff_s"]:
+                radial = -1.0  # just got hit: back off (still facing and shooting), like a human trading damage
             sw = 1.0 if radial >= 0 else 1.0 + (P["kite_strafe"] - 1.0) * min(1.0, -radial * 2.0)
             px, py = -math.sin(b) * self.strafe * sw, math.cos(b) * self.strafe * sw
             mx = math.cos(b) * radial + px

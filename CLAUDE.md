@@ -185,3 +185,10 @@ Open questions:
   - exp/noloot `84f6f57` farm_r=0, hunt=0, laser_bonus=35
   - exp/range `77b90fe` pref_gun=180
   - exp/hide `80c2291` passive: engage_r 70, close_r 40, no farming/hunt/opportunism, plating first
+  - exp/cover `15c4149` scoot=1, hidden_reload=1, anti_flank=1.2 (fight from cover)
+  - exp/lightning `1c03f6b` LOOT_RANK lightning 3 > laser 2 (lightning shorts lasers: counter if real bots carry lasers)
+  - **Results: exp/roof 4.04, exp/aggro 3.88** (v7 4.13, v6 4.27/4.40). Both strategy extremes are worse → the strategy axis is near its optimum; the gap is fight quality vs the real house bots. Skipped hide/noloot/range for now.
+  - play.joinbuilders.org joins a live server match over WebSocket; house-bot logic is server-side (not in the client bundle). Playing a round there is the way to observe real house bots.
+- **Jorge's human play on play.joinbuilders.org** (FFA vs bots named expert/astra/skirmish/red/crimson, 3 each): 2nd place by playing aggressive up close, third-partying fights, backing off when taking damage, boosting/jetting (esp. upward) when under fire because bots mostly miss moving targets; died to a 1v1 from fairly far. Prefers lightning over the laser for close combat; rooftops not worth it.
+- **Sim calibration vs 8 real scores** (`sim/calibrate.sh`, snapshots in sim/bots/v3..v7_bot.py): K0 = current house bots (leading aim) fits best: RMSE 0.40, corr 0.85 (overrates aggro 4.45 vs 3.88, underrates roof 3.47 vs 4.04). Lagging/no-lead house bots (K1/K3) predict 6–7 for bots that really score ~4 → against our bot the real house bots aim well. K2 (lag + lasers) RMSE 0.60.
+- Human-style knobs added (all default off): hit_backoff_s, jet_evade_s/_e, ambush_move, loot_strafe, tp_seek (third-party: move toward heard fights), lightning_first (rank lightning > laser; hunt seeks lightning).

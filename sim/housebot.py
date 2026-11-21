@@ -91,6 +91,10 @@ class HouseBot:
         visible_now = hero is not None
         if hero is not None:
             sq.hero_seen = (t, hero["pos"], hero["vel"])
+            self.hhist = getattr(self, "hhist", [])
+            self.hhist.append((t, hero["pos"], hero["vel"]))
+            if len(self.hhist) > 30:
+                del self.hhist[:10]
         act = {"tick": obs["tick"]}
         assigned = self.id in sq.active(t)
         attacked = any(e.get("type") == "damaged" and e.get("by") == sq.hero for e in obs["events"])
@@ -131,6 +135,13 @@ class HouseBot:
         if engage:
             hp_ = hero["pos"]
             d = hyp(hp_[0] - x, hp_[1] - y)
+            ap_, av_ = hp_, hero["vel"]
+            lag = self.p.get("lag", 0.0)
+            if lag > 0:  # aim at where the hero was `lag` s ago: moving targets get missed
+                for (ht, hpos, hvel) in reversed(getattr(self, "hhist", [])):
+                    ap_, av_ = hpos, hvel
+                    if ht <= t - lag:
+                        break
             # aim with lead and level noise
             if t - self.bias_t > 0.6:
                 s = self.p["sigma"]
@@ -138,9 +149,9 @@ class HouseBot:
                 self.bias_t = t
             spd = me["weapons"][0]["stats"]["speed"] if me["weapons"][0] else 252
             tf = d / spd * self.p["lead"]
-            tx = hp_[0] + hero["vel"][0] * tf
-            ty = hp_[1] + hero["vel"][1] * tf
-            tz = hp_[2] + 4.5
+            tx = ap_[0] + av_[0] * tf
+            ty = ap_[1] + av_[1] * tf
+            tz = ap_[2] + 4.5
             mz = z + 7.0
             yaw = math.atan2(ty - y, tx - x) + self.bias[0]
             pit = math.atan2(tz - mz, hyp(tx - x, ty - y)) + self.bias[1]
@@ -149,8 +160,16 @@ class HouseBot:
                 if self.seen_since is None:
                     self.seen_since = t
                 err = abs(wrap(me["aim"][0] - yaw)) + abs(me["aim"][1] - pit)
-                if t - self.seen_since >= self.p["react"] and err < 0.06 and d < 225:
+                reacted = t - self.seen_since >= self.p["react"]
+                if reacted and err < 0.06 and d < 225:
                     fire = True
+                lw = me["weapons"][1] if len(me["weapons"]) > 1 else None
+                if lw and lw.get("kind") == "laser":
+                    full = lw["stats"]["charge"]
+                    if lw.get("charge", 0) > 0:
+                        self.fire1 = not (lw["charge"] >= full * 0.95 and err < 0.03)  # False = release
+                    else:
+                        self.fire1 = reacted and lw.get("cooldown", 0) <= 0 and d < 270
                 # spacing + strafe
                 b = math.atan2(hp_[1] - y, hp_[0] - x)
                 radial = max(-1.0, min(1.0, (d - self.p["pref"]) / 25.0))
@@ -192,8 +211,10 @@ class HouseBot:
             act["reload"] = True
         act["move"] = [move[0], move[1]]
         act["aim"] = aim
-        if fire:
-            act["fire"] = [True, False]
+        f1 = bool(getattr(self, "fire1", False)) and engage
+        self.fire1 = False
+        if fire or f1:
+            act["fire"] = [bool(fire), f1]
         return act
 
     def _nav(self, x, y, gx, gy, t):
