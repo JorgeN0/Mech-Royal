@@ -1,0 +1,7 @@
+.git
+check/
+arena/
+*.md
+mechfight.schema.json
+tools/
+__pycache__/
