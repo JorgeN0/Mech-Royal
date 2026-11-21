@@ -81,7 +81,7 @@ PARAMS = {
     "drop_r": 110.0,        # go for a supply drop this far away
     "drop_quiet_s": 10.0,   # ... only if no mech was seen for this long
     "tgt_hp_w": 200.0,      # target choice: metres of distance one full HP bar is worth (sim: 200 > 60)
-    "heal_hp": 0.0,         # >0: with no threat in sight and HP below this, hide at cover and regenerate
+    "heal_hp": 0.6,         # >0: with no threat in sight and HP below this, hide at cover and regenerate
     "kite_strafe": 1.0,     # sideways weight while backing off to preferred distance (lower = back off faster)
     "kite_boost_e": 999.0,  # boost while backing off from a closer-than-preferred target if energy is above this
     "farm_r": 250.0,        # walk this far to remembered drones/crates for cubes (0 = only ones in view; sim +0.8)
