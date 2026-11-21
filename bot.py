@@ -98,8 +98,8 @@ PARAMS = {
     "laser_tol": 0.8,       # release the laser when aim error < atan(tol * target radius / distance)
     "laser_lead": 0.08,     # seconds of target motion to lead the (hitscan) laser by
     "upg_laser": 0.0,       # 1 = with a laser in hand, take laser damage/charge upgrades first
-    "anchor": 0.0,          # 1 = Siege-style rooftop anchor: climb a roof inside the next circle and hold its centre
-    "anchor_laser": 1.0,    # ... only once we hold a laser (0 = with any loadout)
+    "anchor": 1.0,          # 1 = Siege-style rooftop anchor: climb a roof inside the next circle and hold its centre
+    "anchor_laser": 0.0,    # ... only once we hold a laser (0 = with any loadout)
     "anchor_t": 0.0,        # ... not before this time (s)
     "anchor_max_d": 300.0,  # ... roofs whose wall approach is at most this far
     "anchor_max_h": 40.0,   # ... roofs at most this high above the ground (jet climb ~60 m from full energy)
