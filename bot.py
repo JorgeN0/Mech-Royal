@@ -56,7 +56,7 @@ PARAMS = {
     "retreat_hp": 0.28,     # always retreat below this HP fraction
     "retreat_mid": 0.5,     # retreat below this if outnumbered or the enemy is healthier
     "loot_close": 110.0,    # loot only when no enemy is closer than this
-    "pref_gun": 100.0,      # preferred fight distance with the gun (sim: 100 > 60)
+    "pref_gun": 180.0,      # preferred fight distance with the gun (sim: 100 > 60)
     "pref_lightning": 32.0,  # ... when we hold lightning
     "pref_vs_lightning": 75.0,  # ... when they hold lightning and we don't
     "pref_hurt_add": 25.0,  # extra distance when below 50% HP
