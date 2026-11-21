@@ -58,7 +58,7 @@ PARAMS = {
     "retreat_hp": 0.28,     # always retreat below this HP fraction
     "retreat_mid": 0.5,     # retreat below this if outnumbered or the enemy is healthier
     "loot_close": 110.0,    # loot only when no enemy is closer than this
-    "pref_gun": 100.0,      # preferred fight distance with the gun (sim: 100 > 60)
+    "pref_gun": 80.0,      # preferred fight distance with the gun (sim: 100 > 60)
     "pref_lightning": 32.0,  # ... when we hold lightning
     "pref_vs_lightning": 75.0,  # ... when they hold lightning and we don't
     "pref_hurt_add": 25.0,  # extra distance when below 50% HP
@@ -95,7 +95,7 @@ PARAMS = {
     "hidden_reload": 1.0,   # 1 = top up the magazine whenever the target is out of sight
     "scoot_hit_hp": 0.0,    # >0: also duck into nearby cover when hit while below this HP fraction
     "cover_tether": 0.0,    # >0: in a visible fight, drift to stay within this many m of the nearest hiding spot
-    "sentinel": 0.0,        # 1 = top-bot style: once we hold a laser (or after sentinel_t), stop roaming:
+    "sentinel": 1.0,        # 1 = top-bot style: once we hold a laser (or after sentinel_t), stop roaming:
                             #     only cubes / nearby weapons, then hold a spot by a building; steady laser fights
     "sentinel_t": 100.0,    # ... also switch on after this many seconds without a laser
     "sentinel_strafe": 0.35,  # fight strafe speed factor while sentineling with a laser at range
