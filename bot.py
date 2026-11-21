@@ -94,6 +94,7 @@ PARAMS = {
     "scoot_r": 30.0,        # ... only to cover this close
     "hidden_reload": 1.0,   # 1 = top up the magazine whenever the target is out of sight
     "scoot_hit_hp": 0.0,    # >0: also duck into nearby cover when hit while below this HP fraction
+    "cover_tether": 0.0,    # >0: in a visible fight, drift to stay within this many m of the nearest hiding spot
     "anti_flank": 1.2,      # >0: weight of stepping away from two attackers that are on opposite sides of us
     "hunt": 1.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
     "hunt_s": 150.0,        # ... until this time (s)
@@ -191,6 +192,7 @@ class Bot:
         self.retreating = False
         self.cover_pt = None
         self.cover_t = -1e9
+        self.cover_ok = False
         self.last_move = (0.0, 0.0)
         self.cmd_speed = 0.0
         self.worst_ms = 0.0
@@ -900,6 +902,7 @@ class Bot:
             return self.cover_pt
         teye = (tp[0], tp[1], tp[2] + threat.get("h", 9) * 0.9)
         best, bs = None, 1e18
+        self.cover_ok = False
         for ring in (10.0, 20.0, 32.0, 45.0):
             for k in range(12):
                 a = away + (k - 5.5) * (TAU / 12)
@@ -914,6 +917,7 @@ class Bot:
                     best, bs = (px, py), s
             if time.perf_counter() > self.deadline:
                 break
+        self.cover_ok = best is not None
         if best is None:
             best = (x + 25 * math.cos(away), y + 25 * math.sin(away))
             if not self._inside_live(best[0], best[1], 10):
@@ -1100,6 +1104,16 @@ class Bot:
                         mx += P["anti_flank"] * ax
                         my += P["anti_flank"] * ay
                         break
+            if mode == "fight" and P["cover_tether"] > 0 and tg.get("los"):
+                # fight next to cover: a reload duck is then ~1 s instead of a long run in the open
+                cp = self._cover_point(tg)
+                if self.cover_ok:
+                    cx, cy = cp[0] - x, cp[1] - y
+                    dc = hyp(cx, cy)
+                    if dc > P["cover_tether"]:
+                        pull = min(1.5, (dc - P["cover_tether"]) / 10.0)
+                        mx += pull * cx / dc
+                        my += pull * cy / dc
             # do not drift out of the zone while fighting
             zx, zy = self.next_c[0] - x, self.next_c[1] - y
             zd = hyp(zx, zy)
