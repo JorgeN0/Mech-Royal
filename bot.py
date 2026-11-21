@@ -101,10 +101,10 @@ PARAMS = {
     "laser_tol": 0.8,       # release the laser when aim error < atan(tol * target radius / distance)
     "laser_lead": 0.08,     # seconds of target motion to lead the (hitscan) laser by
     "upg_laser": 0.0,       # 1 = with a laser in hand, take laser damage/charge upgrades first
-    "ambush_move": 0.0,     # >0: strafe sideways at this fraction of speed while waiting pre-aimed (do not stand still)
-    "loot_strafe": 0.0,     # 1 = strafe while shooting crates (do not stand still)
+    "ambush_move": 0.6,     # >0: strafe sideways at this fraction of speed while waiting pre-aimed (do not stand still)
+    "loot_strafe": 1.0,     # 1 = strafe while shooting crates (do not stand still)
     "hit_backoff_s": 0.0,   # >0: after taking mech damage in a fight, back away for this many seconds (still shooting)
-    "jet_evade_s": 0.0,     # >0: for this long after taking mech damage, jump + boost (jet up / sprint): bots track movers badly
+    "jet_evade_s": 0.6,     # >0: for this long after taking mech damage, jump + boost (jet up / sprint): bots track movers badly
     "jet_evade_e": 30.0,    # ... only with at least this much energy
     "tp_seek": 0.0,         # 1 = third-party: with no threat, move toward fights we hear (others shooting, not at us)
     "lightning_first": 0.0, # 1 = rank lightning above the laser (close-range play); the hunt then seeks lightning
