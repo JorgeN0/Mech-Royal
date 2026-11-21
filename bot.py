@@ -86,6 +86,8 @@ PARAMS = {
     "farm_npc_hp": 0.8,     # only fight drones above this HP fraction
     "farm_crate_hp": 0.7,   # only shoot crates above this HP fraction
     "farm_cap": 99.0,       # stop farming at this many cubes (stats cap at 10; more cubes only make us bigger)
+    "laser_bonus": 150.0,   # weapon choice: metres of extra walking a rank point is worth (laser = rank 3; sim +0.35 vs 35)
+    "scan_until_laser": 0.0,  # 1 = keep frequent 360-degree scans until we hold a laser (not just any weapon)
     "scoot": 0.0,           # 1 = shoot-and-scoot: duck behind cover while the gun reloads and the laser cools down
     "scoot_r": 30.0,        # ... only to cover this close
     "hidden_reload": 0.0,   # 1 = top up the magazine whenever the target is out of sight
@@ -637,7 +639,7 @@ class Bot:
             r_ok = max(reach, P["laser_swap_r"]) if k == "laser" else reach  # the laser is worth a detour
             if d > r_ok or not self._inside_live(p[0], p[1], 10):
                 continue
-            s = d - 35.0 * loot_rank(k, self.P)
+            s = d - self.P["laser_bonus"] * loot_rank(k, self.P)
             if s < bs:
                 best, bs = p, s
         if best is not None:
@@ -1151,6 +1153,8 @@ class Bot:
         P = self.P
         calm = self.mode not in ("fight", "retreat", "zone", "evade") and t - self.last_dmg_t > 3.0
         armed = len(self.weap) > 1 and self.weap[1] is not None
+        if P["scan_until_laser"]:
+            armed = any(w and w.get("kind") == "laser" for w in self.weap)
         if calm and t >= self.next_scan_t and t - self.last_mech_seen_t > 4.0:
             self.scan_start = t
             self.scan_base = self.aim_now[0]

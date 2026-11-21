@@ -163,6 +163,8 @@ class Match:
             m.dmg_dealt = 0.0
             m.shots = 0
             m.hits = 0
+            m.wshots = {}
+            m.whits = {}
             self.mechs.append(m)
         # loot
         lc = cfg["loot"]
@@ -294,6 +296,7 @@ class Match:
                  "t_death": getattr(m, "t_death", None), "shots": m.shots, "hits": m.hits,
                  "weap": "+".join(wp["kind"] for wp in m.weapons if wp and wp["kind"] != "gun") or "-",
                  "took_t": getattr(m, "took_t", None), "drops": getattr(m, "drops_got", 0),
+                 "wshots": m.wshots, "whits": m.whits,
                  "dmg_dealt": round(m.dmg_dealt), "dmg_taken": round(m.dmg_taken)} for m in self.mechs]
 
     def _decide(self):
@@ -794,6 +797,7 @@ class Match:
                                  "ttl": ws["range"] / ws["speed"], "dmg": ws["damage"] * self._dmg_mult(m), "g": 0.0,
                                  "radius": self.cfg["projectile"]["gun_radius"], "origin": list(mz)})
         m.shots += 1
+        m.wshots["gun"] = m.wshots.get("gun", 0) + 1
         self._sound("gun", m.pos, m.id)
 
     def _fire_mortar(self, m, ws):
@@ -807,6 +811,7 @@ class Match:
                                  "ttl": ws.get("ttl", 7), "dmg": ws["damage"] * self._dmg_mult(m), "g": ws["gravity"],
                                  "radius": 0.4, "origin": list(tube), "ws": ws})
         m.shots += 1
+        m.wshots["mortar"] = m.wshots.get("mortar", 0) + 1
         self._sound("mortar", m.pos, m.id)
 
     def _targets(self, exclude):
@@ -852,6 +857,7 @@ class Match:
         self._beam(m, "laser", path)
         self._sound("laser", m.pos, m.id)
         m.shots += 1
+        m.wshots["laser"] = m.wshots.get("laser", 0) + 1
         if best:
             kind, obj = best[1][0], best[1][1]
             if kind == "mech" and self._weapon(obj, "mortar"):
@@ -873,6 +879,7 @@ class Match:
             if best is None or d < best[0]:
                 best = (d, tg)
         m.shots += 1
+        m.wshots["lightning"] = m.wshots.get("lightning", 0) + 1
         self._sound("lightning", m.pos, m.id)
         if best is None:
             d = self._dir(m.aim[0], 0)
@@ -997,6 +1004,7 @@ class Match:
                 attacker.events.append({"type": "hit", "target": obj["id"], "amount": round(dmg), "weapon": weapon})
                 attacker.last_combat = self.t
                 attacker.hits += 1
+                attacker.whits[weapon] = attacker.whits.get(weapon, 0) + 1
             return
         m = obj
         if not m.alive:
@@ -1020,6 +1028,7 @@ class Match:
         if attacker is not None and attacker is not m:
             attacker.last_combat = self.t
             attacker.hits += 1
+            attacker.whits[weapon] = attacker.whits.get(weapon, 0) + 1
             attacker.dmg_dealt += dmg
             hv = {"type": "hit", "target": m.id, "amount": round(dmg, 1), "weapon": weapon}
             if rear:

@@ -139,6 +139,13 @@ def main():
             took = [h["took_t"] for h in hs if h["took_t"] is not None]
             print("   weapons at death %s, first weapon taken in %d/%d matches (median t %.0f s)" % (
                 wk, len(took), len(hs), statistics.median(took) if took else -1))
+            ws, wh = {}, {}
+            for h in hs:
+                for k, v in (h.get("wshots") or {}).items():
+                    ws[k] = ws.get(k, 0) + v
+                for k, v in (h.get("whits") or {}).items():
+                    wh[k] = wh.get(k, 0) + v
+            print("   hit rate on mechs+drones by weapon (crate shots count as misses): %s" % {k: "%d%% of %d" % (100 * wh.get(k, 0) / max(1, v), v) for k, v in ws.items()})
             print("   supply drops captured per match: %.2f" % statistics.mean(h.get("drops", 0) for h in hs))
             print("   score by weapon held: %s" % {k: "%.2f" % statistics.mean(h["score"] for h in hs if h["weap"] == k)
                                                   for k in wk})
