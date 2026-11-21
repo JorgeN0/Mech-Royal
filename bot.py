@@ -74,14 +74,14 @@ PARAMS = {
     "laser_swap_r": 150.0,  # walk this far to swap a lightning/mortar for a laser
     "use_mortar": 1.0,      # 0 = never pick up or aim the mortar (its lob aim pauses the gun)
     "laser_gun_aim": 0.0,   # 1 = keep the gun's lead aim while the laser charges; switch only to release
-    "strafe_min": 0.9,      # strafe direction flips after a random interval in [min, max] seconds
-    "strafe_max": 2.2,
+    "strafe_min": 0.4,      # strafe direction flips after a random interval in [min, max] seconds
+    "strafe_max": 0.8,
     "fight_boost_e": 999.0,  # boost while strafing in a fight when energy is above this (999 = never)
     "upg_offense": 0.0,     # 1 = take gun/laser damage upgrades before armour
     "drop_r": 110.0,        # go for a supply drop this far away
     "drop_quiet_s": 10.0,   # ... only if no mech was seen for this long
     "tgt_hp_w": 200.0,      # target choice: metres of distance one full HP bar is worth (sim: 200 > 60)
-    "heal_hp": 0.0,         # >0: with no threat in sight and HP below this, hide at cover and regenerate
+    "heal_hp": 0.6,         # >0: with no threat in sight and HP below this, hide at cover and regenerate
     "kite_strafe": 1.0,     # sideways weight while backing off to preferred distance (lower = back off faster)
     "kite_boost_e": 999.0,  # boost while backing off from a closer-than-preferred target if energy is above this
     "farm_r": 250.0,        # walk this far to remembered drones/crates for cubes (0 = only ones in view; sim +0.8)
@@ -99,7 +99,7 @@ PARAMS = {
                             #     only cubes / nearby weapons, then hold a spot by a building; steady laser fights
     "sentinel_t": 100.0,    # ... also switch on after this many seconds without a laser
     "sentinel_strafe": 0.35,  # fight strafe speed factor while sentineling with a laser at range
-    "weave": 0.0,           # >0: zigzag (this lateral share) on runs while an enemy sees us; flips on the strafe timer
+    "weave": 0.8,           # >0: zigzag (this lateral share) on runs while an enemy sees us; flips on the strafe timer
     "anti_flank": 1.2,      # >0: weight of stepping away from two attackers that are on opposite sides of us
     "hunt": 1.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
     "hunt_s": 150.0,        # ... until this time (s)
