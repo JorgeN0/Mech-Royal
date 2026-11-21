@@ -16,6 +16,9 @@ class World:
     def __init__(self, map_dir, step_up=1.2, mech_height=9.0, cell=2.0):
         with open(os.path.join(map_dir, "v2", "world.json"), "r", encoding="utf-8") as f:
             wj = json.load(f)
+        # building footprints, kept for roof_spots() (rooftop anchor)
+        self.prisms = [{"top": p["top"], "ring": p["ring"], "holes": p.get("holes") or []}
+                       for p in wj.get("prisms", []) if p.get("kind", "building") == "building"]
         ter = wj["terrain"]
         self.tnx = int(ter["nx"])
         self.tny = int(ter["ny"])
@@ -257,6 +260,84 @@ class World:
             if not self.free_xy(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f):
                 return False
         return True
+
+    # ---------------------------------------------------------------- rooftops
+    def roof_spots(self, min_h=8.0, max_h=45.0, min_inset=6.0, min_cells=25):
+        """Flat building roofs we can climb (jump + jet up a wall) and hold.
+
+        For each roof: `spot` is the roof cell farthest from every edge (out of sight of mechs
+        close to the building), `inset` its distance to the edge in metres, and `apps` a few
+        approaches (ax, ay, ux, uy): free ground just outside a wall that runs from the ground
+        to the roof (no overhang to bump the jet into), with (ux, uy) pointing into the building.
+        """
+        W, H, C = self.W, self.H, self.C
+        bt, bb, ground = self.bt, self.bb, self.ground
+        out = []
+        for p in self.prisms:
+            top = float(p["top"])
+            flat = {c for c in self._raster([p["ring"]] + list(p["holes"])) if abs(bt[c] - top) < 0.6}
+            if len(flat) < min_cells:
+                continue
+            g = sorted(ground[c] for c in flat)[len(flat) // 2]
+            h = top - g
+            if not (min_h <= h <= max_h):
+                continue
+            # 8-neighbour distance (cells) from the roof edge, by BFS inwards
+            dist = {}
+            frontier = []
+            for c in flat:
+                j, i = divmod(c, W)
+                for dj in (-1, 0, 1):
+                    jj = j + dj
+                    for di in (-1, 0, 1):
+                        ii = i + di
+                        if not (0 <= jj < H and 0 <= ii < W) or (jj * W + ii) not in flat:
+                            dist[c] = 1
+                            break
+                    if c in dist:
+                        break
+                if c in dist:
+                    frontier.append(c)
+            while frontier:
+                nxt = []
+                for c in frontier:
+                    j, i = divmod(c, W)
+                    d = dist[c] + 1
+                    for dj in (-1, 0, 1):
+                        for di in (-1, 0, 1):
+                            k = (j + dj) * W + (i + di)
+                            if k in flat and k not in dist:
+                                dist[k] = d
+                                nxt.append(k)
+                frontier = nxt
+            if not dist:
+                continue
+            best = max(dist, key=dist.get)
+            inset = (dist[best] - 0.5) * C
+            if inset < min_inset:
+                continue
+            sx, sy = self.center(best)
+            apps = []
+            for c, d in dist.items():
+                if d != 1 or bb[c] > ground[c] + 1.0:
+                    continue  # not an edge, or a raised/overhanging part the jet would hit from below
+                cx, cy = self.center(c)
+                ox, oy = cx - sx, cy - sy
+                on = math.hypot(ox, oy)
+                if on < 1e-6:
+                    continue
+                ux, uy = ox / on, oy / on
+                ax, ay = cx + ux * 5.0, cy + uy * 5.0
+                if not self.free_xy(ax, ay):
+                    continue
+                apps.append((math.atan2(uy, ux), ax, ay, -ux, -uy))
+            if not apps:
+                continue
+            apps.sort()
+            stride = max(1, len(apps) // 8)
+            out.append({"spot": (sx, sy), "top": top, "ground": g, "h": h, "inset": inset,
+                        "apps": [a[1:] for a in apps[::stride]]})
+        return out
 
 
 class AStar:

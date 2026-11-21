@@ -92,6 +92,12 @@ PARAMS = {
     "scoot_r": 30.0,        # ... only to cover this close
     "hidden_reload": 0.0,   # 1 = top up the magazine whenever the target is out of sight
     "anti_flank": 0.0,      # >0: weight of stepping away from two attackers that are on opposite sides of us
+    "anchor": 0.0,          # 1 = Siege-style rooftop anchor: climb a roof inside the next circle and hold its centre
+    "anchor_laser": 1.0,    # ... only once we hold a laser (0 = with any loadout)
+    "anchor_t": 0.0,        # ... not before this time (s)
+    "anchor_max_d": 300.0,  # ... roofs whose wall approach is at most this far
+    "anchor_max_h": 40.0,   # ... roofs at most this high above the ground (jet climb ~60 m from full energy)
+    "anchor_farm": 0.0,     # 1 = keep farming remembered drones/crates before anchoring
     "ffa_detect": 1.0,      # 1 = switch to FFA_PARAMS once other mechs are clearly killing each other
     "ffa_early": 2.0,       # ... deaths not caused by us before t=120 s that mean free-for-all
     "ffa_any": 4.0,         # ... or this many at any time
@@ -184,6 +190,20 @@ class Bot:
         self.scan_start = -1e9
         self.scan_base = 0.0
         self.next_scan_t = 0.0
+        # rooftop anchor
+        self.roofs = []
+        if self.world is not None and self.P["anchor"]:
+            try:
+                self.roofs = self.world.roof_spots(max_h=self.P["anchor_max_h"])
+            except Exception as e:
+                mf.log("roof_spots failed:", repr(e))
+        self.roof = self.roof_app = self.roof_i = self.roof_key = None
+        self.roof_bad = set()
+        self.climb_t = None
+        self.on_roof = False
+        self.want_jump = False
+        self.jet = False
+        mf.log("roofs %d (%.2fs)" % (len(self.roofs), time.perf_counter() - t0))
         gc.collect()
         if hasattr(gc, "freeze"):
             gc.freeze()
@@ -241,6 +261,10 @@ class Bot:
         self.max_pitch = float(st.get("max_pitch", 1.3))
         self.aim_now = me.get("aim", [0.0, 0.0])
         self.weap = me.get("weapons") or [None, None]
+        w = self.world
+        self.on_roof = w is not None and bool(me.get("grounded")) and z - w.ground_at(x, y) > 4.0
+        if self.on_roof:
+            self.climb_t = None
 
         self._events(obs)
         self._detect_ffa(obs)
@@ -256,19 +280,28 @@ class Bot:
         target = self._pick_target(enemies)
         mode, goal, speed, boost = self._decide(obs, target, npcs)
         self.mode = mode
+        if mode != "climb":
+            self.climb_t = None
 
         # ----- legs
+        self.want_jump = False
+        self.jet = False
         mvx, mvy = self._legs(mode, goal, speed, target, obs)
         jump = False
-        dodge = self._dodge_mortar(obs)
+        climbing = mode == "climb" and self.climb_t is not None
+        if climbing:
+            jump = self.want_jump
+            boost = self.jet
+        dodge = None if climbing else self._dodge_mortar(obs)
         if dodge is not None:
             mvx, mvy = dodge
             boost = self.energy > 10
-        if t < self.unstuck_until:
+        if t < self.unstuck_until and not climbing:
             mvx, mvy = self.unstuck_dir
             jump = bool(me.get("grounded"))
             boost = self.energy > 5
-        self._stuck_check(mvx, mvy, mode)
+        if not climbing:
+            self._stuck_check(mvx, mvy, mode)
         act["move"] = [round(mvx, 3), round(mvy, 3)]
         act["boost"] = bool(boost)
         if jump:
@@ -546,9 +579,14 @@ class Bot:
         if self.zone_urgent or self.outside:
             return "zone", self.zone_goal, 1.0, (self.energy > 8 and (self.outside or self.zone_need > 0.5 * self.zone_avail))
 
+        on_anchor = P["anchor"] and self.on_roof and self.roof is not None
+        if P["anchor"] and self.climb_t is not None and not self.on_roof and self.roof is not None:
+            return "climb", (self.roof_app[0], self.roof_app[1]), 1.0, False  # finish a climb once started
         if threat:
             weak_one = t_hp < hp * 0.8 and n_close <= 1
             if self.retreating and not weak_one:
+                if on_anchor:
+                    return "anchor", self.roof["spot"], 1.0, False  # the roof centre is our cover
                 return "retreat", self._cover_point(target), 1.0, boost_ok and target["los"]
             grab = self._near_weapon(35.0)
             if grab is not None:
@@ -575,6 +613,8 @@ class Bot:
                 return "evade", (x + 40 * math.cos(away), y + 40 * math.sin(away)), 1.0, False
 
         if attacked and self.dmg_bearing is not None:
+            if on_anchor:
+                return "anchor", self.roof["spot"], 1.0, False
             # hit by someone we cannot see: turn to face it (handled by aim) and keep moving to cover
             return "evade", self._cover_from_bearing(self.dmg_bearing), 1.0, False
 
@@ -598,17 +638,24 @@ class Bot:
         # loot when nobody is close (also right after a kill: the wreck drops cubes and weapons)
         no_close = all(e["dh"] > P["loot_close"] and not (e["dh"] < 220 and e.get("approach", 0.0) > 3.0)
                        for e in self.enemies)
+        anchoring = self._anchor_ready()
         if (t - self.last_mech_seen_t > 6.0 or no_close) and self.zone_need < 0.45 * max(1.0, self.zone_avail):
-            lg = self._loot_goal(obs, npcs)
+            lg = self._loot_goal(obs, npcs, farm=not anchoring or P["anchor_farm"])
             if lg is not None:
                 return lg
+
+        if anchoring:
+            r = self.roof
+            if self.on_roof and abs(self.pos[2] - r["top"]) < 2.5:
+                return "anchor", r["spot"], 1.0, False
+            return "climb", (self.roof_app[0], self.roof_app[1]), 1.0, False
 
         if not self.in_safe:
             return "travel", self.zone_goal, 1.0, False
 
         return "hold", self._hold_point(), 1.0, False
 
-    def _loot_goal(self, obs, npcs):
+    def _loot_goal(self, obs, npcs, farm=True):
         x, y, z = self.pos
         hp = self.hp_frac
         early = self.t < 90.0
@@ -676,7 +723,7 @@ class Bot:
                 return "crate", goal, 1.0, False
         # 5) farm: walk to remembered drones (2 cubes) and crates (1 cube) that are out of view
         fr = self.P["farm_r"]
-        if fr > 0 and not capped:
+        if fr > 0 and not capped and farm:
             best, bs = None, 1e18
             if hp > self.P["farm_npc_hp"] and self.t < 330:
                 for p in self.known_npc.values():
@@ -820,10 +867,99 @@ class Bot:
         fake = {"pos": [self.pos[0] + 80 * math.cos(bearing), self.pos[1] + 80 * math.sin(bearing), self.pos[2]], "h": 9}
         return self._cover_point(fake)
 
+    # ------------------------------------------------------------------ rooftop anchor
+    def _anchor_ready(self):
+        """True when we should hold (or climb to) a roof now; picks the roof."""
+        P = self.P
+        if not P["anchor"] or not self.roofs or self.t < P["anchor_t"] or self.zone_urgent or self.outside:
+            return False
+        if P["anchor_laser"] and not any(w and w.get("kind") == "laser" for w in self.weap):
+            return False
+        return self._pick_roof() is not None
+
+    def _pick_roof(self):
+        """The climbable roof inside the next safe circle that is near us, deep in the circle and
+        far from its own edges. Kept for the whole zone phase while it stays inside the circle."""
+        if self.roof is not None and self.roof_key == self.zone_key and \
+                self._inside_safe(self.roof["spot"][0], self.roof["spot"][1], -self.roof["inset"]):
+            return self.roof
+        self.roof_key = self.zone_key
+        x, y = self.pos[0], self.pos[1]
+        P = self.P
+        best, bs = None, 1e18
+        for i, r in enumerate(self.roofs):
+            if i in self.roof_bad:
+                continue
+            sx, sy = r["spot"]
+            if not self._inside_safe(sx, sy, -r["inset"]):
+                continue
+            app = min(r["apps"], key=lambda a: hyp(a[0] - x, a[1] - y))
+            d = hyp(app[0] - x, app[1] - y)
+            if d > P["anchor_max_d"]:
+                continue
+            s = d + 0.4 * hyp(sx - self.next_c[0], sy - self.next_c[1]) - 4.0 * r["inset"]
+            if s < bs:
+                best, bs = (i, r, app), s
+        if best is None:
+            self.roof = self.roof_app = self.roof_i = None
+            return None
+        if self.roof_i != best[0]:
+            self.climb_t = None
+            mf.log("anchor roof %d h=%.0f inset=%.0f at t=%.0f" % (best[0], best[1]["h"], best[1]["inset"], self.t))
+        self.roof_i, self.roof, self.roof_app = best
+        return self.roof
+
+    def _climb_legs(self):
+        """Walk to the wall approach, wait for energy, then jump and jet straight up onto the roof."""
+        x, y, z = self.pos
+        r = self.roof
+        ax, ay, ux, uy = self.roof_app
+        d = hyp(ax - x, ay - y)
+        if self.on_roof:
+            # on some other roof or ledge: walk off it towards our approach (there is no fall damage)
+            return ((ax - x) / d, (ay - y) / d) if d > 1.0 else (0.0, 0.0)
+        grounded = bool(self.me.get("grounded"))
+        if self.climb_t is None:
+            if d > 2.5:
+                return self._nav(ax, ay)
+            need = 1.7 * max(0.0, r["top"] - z) + 15.0
+            if grounded and self.energy < min(need, 98.0):
+                return 0.0, 0.0  # at the wall: regenerate energy first (about 6 s from empty)
+            self.climb_t = self.t
+        if self.t - self.climb_t > 7.0:
+            mf.log("climb failed on roof %s at t=%.0f" % (self.roof_i, self.t))
+            self.roof_bad.add(self.roof_i)
+            self.roof = self.roof_app = self.roof_i = self.roof_key = None
+            self.climb_t = None
+            return 0.0, 0.0
+        self.want_jump = grounded
+        if grounded or z < r["top"] + 0.3:
+            self.jet = not grounded
+            return ux, uy  # push into the wall and rise along it
+        # above the roof edge: stop the jet (or we sail over the whole building) and drop onto the roof
+        self.jet = False
+        sx, sy = r["spot"]
+        ds = hyp(sx - x, sy - y)
+        if ds < 3.0:
+            return 0.0, 0.0
+        return (sx - x) / ds, (sy - y) / ds
+
     # ------------------------------------------------------------------ legs
     def _legs(self, mode, goal, speed, target, obs):
         x, y = self.pos[0], self.pos[1]
         t = self.t
+        if self.P["anchor"]:
+            if mode == "climb":
+                return self._climb_legs()
+            if self.on_roof and self.roof is not None and mode in (
+                    "anchor", "fight", "npc", "crate", "retreat", "scoot", "evade", "hold", "heal", "cube"):
+                # holding the roof: stay on the spot farthest from the edges (silent, out of sight from below)
+                sx, sy = self.roof["spot"]
+                d = hyp(sx - x, sy - y)
+                if d < 2.0:
+                    return 0.0, 0.0
+                sp = 1.0 if d > 6.0 else 0.4
+                return (sx - x) / d * sp, (sy - y) / d * sp
         if mode in ("fight", "npc") or (mode == "crate" and goal is None):
             tg = target if mode == "fight" else self.loot_target
             if tg is None:
