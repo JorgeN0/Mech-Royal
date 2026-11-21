@@ -199,3 +199,11 @@ Open questions:
 - First Top-16 showdown match: 12/16 had a laser or lightning by 40 s (most at 0–9 s); all 6 survivors at 186 s held lasers; survivors were silent (<5 m/s on the ground) 75–98% of the time; defensive upgrades (nanites/armor/plating); bots that never got a secondary placed 14–16.
 - Sim (n=96, v8 base): cover_tether 14 +0.31 ± 0.25, heal_hp 0.6 +0.26 ± 0.22, retreat_hp 0.4 −0.14 (all n.s.).
 - sentinel knob (off): once we hold a laser (or after sentinel_t 100 s), no drone/crate farming or hunting: only cubes and nearby weapons, then hold a spot by a building; fights with the laser at >50 m strafe at 35% speed. Modeled on the top-16 showdown bots (laser, mostly stationary, few trips). Sim: practice −0.08 ± 0.29 (with pref_gun 80), FFA 7.95 vs 8.04: neutral. Real test: exp/sentinel.
+- **Real (v8 base): exp/heal 4.54, exp/tether 4.25, exp/cover-hit 4.25, exp/sentinel 4.10** (v8 4.48/4.56). Nothing beats v8; standing still (sentinel) is worse in practice even though the showdown top bots do it in FFA.
+- **House bots measured** (broadcast "Real players" lobbies run the server's house AI: 3 each of Skirmish = house:probe-astra-skirmish, Astra = probe-astra-finalist, Red = probe-red-best, Expert = expert, Crimson = probe-red-honest; 15 = the practice squad size). `tools/aim_stats.py`, `tools/lead_test.py`:
+  - they move 95–99% of the time at ~10.5 m/s; Red/Crimson/Expert change heading every 0.6 s, Skirmish/Astra every 1.2–1.4 s;
+  - gun accuracy vs each other at 40–80 / 80–130 / >130 m: Red 83/38/7%, Expert 72/41/12%, Crimson 63/48/7%, Astra 45/22/1%, Skirmish 34/18/3%; lasers carried, 15–27% laser hits; they spam the gun beyond 130 m;
+  - their accuracy matches perfect velocity lead → **they lead-aim**. The sim's easy/medium bots do not lead (why the sim rejected faster jinks).
+  - perfect lead vs OUR movement physics (accel 58.5): current strafe flips 0.9–2.2 s → 78/68/62% hittable at 60/80/100 m; flips 0.4–0.8 s → 45/29/20%; standing still 100%.
+  - our perfect lead vs THEIR movement: 92/83/75/65/48/36% at 40/60/80/100/120/150 m.
+- weave knob (off): zigzag runs (retreat/scoot/evade/weapon/travel/...) while an enemy sees us, on the strafe timer. Experiments: exp/jink (strafe 0.4–0.8 s + weave 0.8), exp/jink-range (+ pref_gun 120).

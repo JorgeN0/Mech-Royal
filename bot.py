@@ -99,6 +99,7 @@ PARAMS = {
                             #     only cubes / nearby weapons, then hold a spot by a building; steady laser fights
     "sentinel_t": 100.0,    # ... also switch on after this many seconds without a laser
     "sentinel_strafe": 0.35,  # fight strafe speed factor while sentineling with a laser at range
+    "weave": 0.0,           # >0: zigzag (this lateral share) on runs while an enemy sees us; flips on the strafe timer
     "anti_flank": 1.2,      # >0: weight of stepping away from two attackers that are on opposite sides of us
     "hunt": 1.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
     "hunt_s": 150.0,        # ... until this time (s)
@@ -198,6 +199,8 @@ class Bot:
         self.cover_t = -1e9
         self.cover_ok = False
         self.sentinel_on = False
+        self.weave_s = 1.0
+        self.weave_flip_t = 0.0
         self.last_move = (0.0, 0.0)
         self.cmd_speed = 0.0
         self.worst_ms = 0.0
@@ -334,6 +337,18 @@ class Bot:
             boost = True
             if me.get("grounded"):
                 jump = True
+        if P["weave"] > 0 and not climbing and dodge is None and t >= self.unstuck_until                 and mode in ("retreat", "scoot", "evade", "weapon", "travel", "cube", "hunt", "farm", "heal", "drop")                 and any(e.get("los") and e["dh"] < 200 for e in self.enemies):
+            # lead-aiming bots hit straight-line runners: weave so their predicted point is wrong
+            n = hyp(mvx, mvy)
+            if n > 0.3:
+                if t > self.weave_flip_t:
+                    self.weave_s = -self.weave_s
+                    self.weave_flip_t = t + self.rng.uniform(P["strafe_min"], P["strafe_max"])
+                ux, uy = mvx / n, mvy / n
+                wx, wy = self._avoid(ux - uy * self.weave_s * P["weave"], uy + ux * self.weave_s * P["weave"])
+                m = hyp(wx, wy)
+                if m > 1e-6:
+                    mvx, mvy = wx / m * n, wy / m * n
         act["move"] = [round(mvx, 3), round(mvy, 3)]
         act["boost"] = bool(boost)
         if jump:
