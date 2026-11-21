@@ -208,3 +208,4 @@ Open questions:
   - our perfect lead vs THEIR movement: 92/83/75/65/48/36% at 40/60/80/100/120/150 m.
 - weave knob (off): zigzag runs (retreat/scoot/evade/weapon/travel/...) while an enemy sees us, on the strafe timer. Experiments: exp/jink (strafe 0.4–0.8 s + weave 0.8), exp/jink-range (+ pref_gun 120).
 - Sim with all house levels leading (--set easy.lead=1 medium.lead=1): exp/jink +0.55 ± 0.35, jink-range +0.41; old sim +0.18 / +0.07. Follow-ups ready: exp/jink-heal (jink + heal_hp 0.6), exp/jink-fast (flips 0.3–0.6 s, weave 1.0).
+- **Real: exp/jink 4.65 (new best), exp/jink-range 4.35** (gun range 120 hurts). v9 (main) = v8 + jink defaults (strafe 0.4–0.8 s, weave 0.8). New knob pref_laser (off): fight distance while holding a laser. Idea: house bots hit 1–12% beyond 130 m (lasers 15–27%), our hitscan laser does not care about range → exp/snipe (pref_laser 165, engage_r 200, kite_boost_e 40).

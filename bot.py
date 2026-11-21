@@ -59,6 +59,7 @@ PARAMS = {
     "retreat_mid": 0.5,     # retreat below this if outnumbered or the enemy is healthier
     "loot_close": 110.0,    # loot only when no enemy is closer than this
     "pref_gun": 100.0,      # preferred fight distance with the gun (sim: 100 > 60)
+    "pref_laser": 0.0,       # >0: preferred fight distance while we hold a laser (house bots miss beyond 130 m)
     "pref_lightning": 32.0,  # ... when we hold lightning
     "pref_vs_lightning": 75.0,  # ... when they hold lightning and we don't
     "pref_hurt_add": 25.0,  # extra distance when below 50% HP
@@ -74,8 +75,8 @@ PARAMS = {
     "laser_swap_r": 150.0,  # walk this far to swap a lightning/mortar for a laser
     "use_mortar": 1.0,      # 0 = never pick up or aim the mortar (its lob aim pauses the gun)
     "laser_gun_aim": 0.0,   # 1 = keep the gun's lead aim while the laser charges; switch only to release
-    "strafe_min": 0.9,      # strafe direction flips after a random interval in [min, max] seconds
-    "strafe_max": 2.2,
+    "strafe_min": 0.4,      # strafe direction flips after a random interval in [min, max] seconds
+    "strafe_max": 0.8,
     "fight_boost_e": 999.0,  # boost while strafing in a fight when energy is above this (999 = never)
     "upg_offense": 0.0,     # 1 = take gun/laser damage upgrades before armour
     "drop_r": 110.0,        # go for a supply drop this far away
@@ -99,7 +100,7 @@ PARAMS = {
                             #     only cubes / nearby weapons, then hold a spot by a building; steady laser fights
     "sentinel_t": 100.0,    # ... also switch on after this many seconds without a laser
     "sentinel_strafe": 0.35,  # fight strafe speed factor while sentineling with a laser at range
-    "weave": 0.0,           # >0: zigzag (this lateral share) on runs while an enemy sees us; flips on the strafe timer
+    "weave": 0.8,           # >0: zigzag (this lateral share) on runs while an enemy sees us; flips on the strafe timer
     "anti_flank": 1.2,      # >0: weight of stepping away from two attackers that are on opposite sides of us
     "hunt": 1.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
     "hunt_s": 150.0,        # ... until this time (s)
@@ -647,7 +648,8 @@ class Bot:
                 return "weapon", grab, 1.0, False  # unarmed and a weapon is right here: take it, still shooting
             has_lightning = any(w and w.get("kind") == "lightning" for w in self.weap)
             fboost = target["los"] and not has_lightning and self.energy > P["fight_boost_e"]
-            if target["dh"] < P["pref_gun"] - 20.0 and self.energy > P["kite_boost_e"] and not has_lightning:
+            pref_d = P["pref_laser"] if (P["pref_laser"] > 0 and any(w and w.get("kind") == "laser" for w in self.weap)) else P["pref_gun"]
+            if target["dh"] < pref_d - 20.0 and self.energy > P["kite_boost_e"] and not has_lightning:
                 fboost = True  # kite: open the distance fast
             if P["scoot"] and target["los"] and (self._reloading_exposed(target) or
                     (hp < P["scoot_hit_hp"] and t - self.last_mech_dmg_t < 1.0)):
@@ -1096,6 +1098,8 @@ class Bot:
                 kinds = set(tg.get("weapons") or ())
                 mine = {w["kind"] for w in self.weap if w}
                 pref = P["pref_gun"]
+                if P["pref_laser"] > 0 and "laser" in mine:
+                    pref = P["pref_laser"]
                 if "lightning" in mine and "mortar" not in kinds:
                     pref = P["pref_lightning"]
                 elif "lightning" in kinds and "lightning" not in mine:
