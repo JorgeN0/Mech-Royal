@@ -54,12 +54,12 @@ def loot_rank(kind, P=None):
 
 # Tactics knobs (sim/run.py --botset key=value overrides these for experiments)
 PARAMS = {
-    "engage_r": 150.0,      # treat mechs closer than this as a fight
+    "engage_r": 200.0,      # treat mechs closer than this as a fight
     "retreat_hp": 0.28,     # always retreat below this HP fraction
     "retreat_mid": 0.5,     # retreat below this if outnumbered or the enemy is healthier
     "loot_close": 110.0,    # loot only when no enemy is closer than this
     "pref_gun": 100.0,      # preferred fight distance with the gun (sim: 100 > 60)
-    "pref_laser": 0.0,       # >0: preferred fight distance while we hold a laser (house bots miss beyond 130 m)
+    "pref_laser": 165.0,       # >0: preferred fight distance while we hold a laser (house bots miss beyond 130 m)
     "pref_lightning": 32.0,  # ... when we hold lightning
     "pref_vs_lightning": 75.0,  # ... when they hold lightning and we don't
     "pref_hurt_add": 25.0,  # extra distance when below 50% HP
@@ -84,7 +84,7 @@ PARAMS = {
     "tgt_hp_w": 200.0,      # target choice: metres of distance one full HP bar is worth (sim: 200 > 60)
     "heal_hp": 0.0,         # >0: with no threat in sight and HP below this, hide at cover and regenerate
     "kite_strafe": 1.0,     # sideways weight while backing off to preferred distance (lower = back off faster)
-    "kite_boost_e": 999.0,  # boost while backing off from a closer-than-preferred target if energy is above this
+    "kite_boost_e": 40.0,  # boost while backing off from a closer-than-preferred target if energy is above this
     "farm_r": 250.0,        # walk this far to remembered drones/crates for cubes (0 = only ones in view; sim +0.8)
     "farm_npc_hp": 0.8,     # only fight drones above this HP fraction
     "farm_crate_hp": 0.7,   # only shoot crates above this HP fraction
