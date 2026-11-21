@@ -43,6 +43,12 @@ UPGRADE_PRIORITY = {
 }
 LOOT_RANK = {"laser": 3, "lightning": 2, "mortar": 2}
 
+
+def loot_rank(kind):
+    if kind == "mortar" and not PARAMS.get("use_mortar", 1.0):
+        return 0
+    return LOOT_RANK.get(kind, 0)
+
 # Tactics knobs (sim/run.py --botset key=value overrides these for experiments)
 PARAMS = {
     "engage_r": 150.0,      # treat mechs closer than this as a fight
@@ -63,6 +69,12 @@ PARAMS = {
     "weapon_early_s": 150.0,  # ... during the first this-many seconds
     "scan_every": 9.0,      # 360-degree torso sweep this often while calm and unarmed
     "laser_swap_r": 150.0,  # walk this far to swap a lightning/mortar for a laser
+    "use_mortar": 1.0,      # 0 = never pick up or aim the mortar (its lob aim pauses the gun)
+    "laser_gun_aim": 0.0,   # 1 = keep the gun's lead aim while the laser charges; switch only to release
+    "strafe_min": 0.9,      # strafe direction flips after a random interval in [min, max] seconds
+    "strafe_max": 2.2,
+    "fight_boost_e": 999.0,  # boost while strafing in a fight when energy is above this (999 = never)
+    "upg_offense": 0.0,     # 1 = take gun/laser damage upgrades before armour
 }
 ALERT_SOUNDS = {"gun", "mortar", "explosion", "laser", "laser_charge", "lightning", "step", "boost", "jet", "reload"}
 
@@ -137,6 +149,9 @@ class Bot:
         self.worst_ms = 0.0
         self.n_act = 0
         self.known_pk = {}  # pickup id -> (kind, pos); weapons on the ground never despawn
+        # telemetry, written into the debug drawing (downloadable by our team after real matches)
+        self.tm = {"k": 0, "sh": 0, "hit": 0, "dd": 0.0, "dt": {}}
+        self.tm_next = 0.0
         self.scan_start = -1e9
         self.scan_base = 0.0
         self.next_scan_t = 0.0
@@ -251,14 +266,32 @@ class Bot:
             mf.draw.label(label)
             if goal is not None:
                 mf.draw.point([goal[0], goal[1], z + 1], "#40c0ff", 5)
+            if self.t >= self.tm_next:
+                # compact cumulative stats line for offline analysis of real matches (<= 80 chars)
+                self.tm_next = self.t + 5.0
+                tm = self.tm
+                sec = (self.weap[1] or {}).get("kind", "-") if len(self.weap) > 1 else "-"
+                dts = ",".join("%s%d" % (k, v) for k, v in sorted(tm["dt"].items()))
+                mf.draw.text(("TM t%d a%d k%d s%d h%d dd%d c%d %s %s" % (
+                    self.t, obs.get("alive", 0), tm["k"], tm["sh"], tm["hit"], tm["dd"], me.get("cubes", 0),
+                    sec[:2], dts))[:80])
         except Exception:
             pass
 
     # ------------------------------------------------------------------ events
     def _events(self, obs):
         t = self.t
+        tm = self.tm
         for e in obs.get("events") or ():
             ty = e.get("type")
+            if ty == "damaged":
+                wk = str(e.get("weapon"))[:2]
+                tm["dt"][wk] = tm["dt"].get(wk, 0.0) + float(e.get("amount", 0) or 0)
+            elif ty == "hit":
+                tm["hit"] += 1
+                tm["dd"] += float(e.get("amount", 0) or 0)
+            elif ty == "kill":
+                tm["k"] += 1
             if ty == "damaged":
                 if e.get("weapon") == "zone":
                     continue
@@ -469,7 +502,9 @@ class Bot:
             grab = self._near_weapon(35.0)
             if grab is not None:
                 return "weapon", grab, 1.0, False  # unarmed and a weapon is right here: take it, still shooting
-            return "fight", None, 1.0, False
+            has_lightning = any(w and w.get("kind") == "lightning" for w in self.weap)
+            fboost = target["los"] and not has_lightning and self.energy > P["fight_boost_e"]
+            return "fight", None, 1.0, fboost
 
         # a drone is shooting us: it is 2 cubes for ~8 gun hits, so kill it unless we are hurt
         if self.npc_attacker is not None and t - self.npc_attacker[1] < 3.0:
@@ -523,13 +558,13 @@ class Bot:
             return "cube", (best[0], best[1]), 1.0, False
         # 2) better weapon nearby
         s1 = self.weap[1] if len(self.weap) > 1 else None
-        cur = LOOT_RANK.get(s1["kind"], 0) if s1 else 0
+        cur = loot_rank(s1["kind"]) if s1 else 0
         held = {w["kind"] for w in self.weap if w}
         P = PARAMS
         reach = P["weapon_r_early"] if (cur == 0 and self.t < P["weapon_early_s"]) else 60.0
         best, bs = None, 1e18
         for pid, (k, p) in self.known_pk.items():
-            if k in held or LOOT_RANK.get(k, 0) <= cur:
+            if k in held or loot_rank(k) <= cur:
                 continue
             if abs(p[2] - z) > 3.5:
                 continue
@@ -537,7 +572,7 @@ class Bot:
             r_ok = max(reach, P["laser_swap_r"]) if k == "laser" else reach  # the laser is worth a detour
             if d > r_ok or not self._inside_live(p[0], p[1], 10):
                 continue
-            s = d - 35.0 * LOOT_RANK.get(k, 0)
+            s = d - 35.0 * loot_rank(k)
             if s < bs:
                 best, bs = p, s
         if best is not None:
@@ -581,7 +616,7 @@ class Bot:
         held = {w["kind"] for w in self.weap if w}
         best, bd = None, reach
         for k, p in self.known_pk.values():
-            if k in held or LOOT_RANK.get(k, 0) == 0 or abs(p[2] - z) > 3.5:
+            if k in held or loot_rank(k) == 0 or abs(p[2] - z) > 3.5:
                 continue
             d = hyp(p[0] - x, p[1] - y)
             if d < bd:
@@ -694,7 +729,7 @@ class Bot:
                 return 0.0, 0.0  # behind cover: wait silently, pre-aimed where it will reappear
             if t > self.strafe_flip_t:
                 self.strafe = -self.strafe
-                self.strafe_flip_t = t + self.rng.uniform(0.9, 2.2)
+                self.strafe_flip_t = t + self.rng.uniform(PARAMS["strafe_min"], PARAMS["strafe_max"])
             b = tg["bearing"]
             d = tg["dh"]
             if mode == "npc":
@@ -901,8 +936,9 @@ class Bot:
                 full = float(ls.get("charge", 0.75))
                 if charge > 0:
                     yaw, pit = self._direct_aim(tp, tv, zoff, 0.08)
-                    aim = (yaw, pit)
-                    aimed_weapon = "laser"
+                    if not PARAMS["laser_gun_aim"] or charge >= full * 0.8:
+                        aim = (yaw, pit)  # (with laser_gun_aim the gun keeps leading until the charge is nearly full)
+                        aimed_weapon = "laser"
                     err_y = abs(wrap(ay - yaw))
                     err_p = abs(ap - pit)
                     tol = math.atan2(rad * 0.8, max(d3, 1.0))
@@ -915,7 +951,7 @@ class Bot:
                     fire[li] = True  # start charging
 
             # mortar: lob when ready and the target is mid range
-            if aimed_weapon is None and "mortar" in slots and target.get("kind") != "crate":
+            if aimed_weapon is None and "mortar" in slots and target.get("kind") != "crate" and PARAMS["use_mortar"]:
                 mi, mw = slots["mortar"]
                 ms = mw.get("stats", {})
                 if float(mw.get("cooldown", 0)) <= 0 and 28.0 < target["dh"] < 215.0:
@@ -981,6 +1017,7 @@ class Bot:
         act["aim"] = [round(wrap(yaw), 4), round(clamp(pit, self.min_pitch, self.max_pitch), 4)]
         if fire[0] or fire[1]:
             act["fire"] = fire
+            self.tm["sh"] += 1
         if reload:
             act["reload"] = True
 
@@ -1071,7 +1108,7 @@ class Bot:
             if w:
                 held[w["kind"]] = i
         s1 = self.weap[1] if len(self.weap) > 1 else None
-        cur = LOOT_RANK.get(s1["kind"], 0) if s1 else 0
+        cur = loot_rank(s1["kind"]) if s1 else 0
         best, br = None, cur
         for pk in obs.get("pickups") or ():
             k = pk.get("kind")
@@ -1080,7 +1117,7 @@ class Bot:
             p = pk["pos"]
             if hyp(p[0] - x, p[1] - y) > self.pick_r - 0.3 or abs(p[2] - z) > 3.8:
                 continue
-            r = LOOT_RANK.get(k, 0)
+            r = loot_rank(k)
             if r > br:
                 best, br = pk, r
         if best is None:
@@ -1096,6 +1133,8 @@ class Bot:
         best, bs = 0, -1e9
         for i, c in enumerate(ch):
             s = UPGRADE_PRIORITY.get(c.get("id"), 10)
+            if PARAMS["upg_offense"] and c.get("id") in ("gun_rate", "gun_damage", "laser_damage", "laser_charge"):
+                s += 60
             if s > bs:
                 best, bs = i, s
         return best

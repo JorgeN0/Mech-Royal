@@ -68,7 +68,11 @@ def run_one(args):
         rng.shuffle(order)
         for k, i in enumerate(order):
             spec = bots[k % len(bots)]
-            ctrls[i] = BotCtrl(load_bot_class(spec, w), hello(i), spec)
+            if spec.startswith("solo:"):  # e.g. solo:expert -> aggressive stand-in opponent
+                ctrls[i] = housebot.SoloBot(i, spec.split(":")[1], cfg, seed * 31 + i, w)
+                ctrls[i].name = spec
+            else:
+                ctrls[i] = BotCtrl(load_bot_class(spec, w), hello(i), spec)
     m = Match(cfg, w, ctrls, seed=seed, mode=mode, hero=hero)
     t0 = time.perf_counter()
     res = m.run()
@@ -134,6 +138,15 @@ def main():
                 spec, statistics.mean(sc), sd / max(1, len(sc)) ** 0.5, len(sc), statistics.mean(h["kills"] for h in hs),
                 statistics.mean(h["t_death"] or o["t_end"] for h, o in zip(hs, sub)), statistics.mean(h["cubes"] for h in hs),
                 100.0 * hits / max(1, shots), causes))
+        if len(bots) > 1:
+            # paired by seed: same spawns/zone/loot, so most of the luck cancels
+            base = {o["seed"]: o["res"][o["hero"]]["score"] for o in out if o["spec"] == bots[0]}
+            for spec in bots[1:]:
+                d = [o["res"][o["hero"]]["score"] - base[o["seed"]] for o in out if o["spec"] == spec and o["seed"] in base]
+                if len(d) > 1:
+                    m_, se = statistics.mean(d), statistics.pstdev(d) / len(d) ** 0.5
+                    verdict = "BETTER" if m_ > 2 * se else "WORSE" if m_ < -2 * se else "no clear difference"
+                    print("   paired vs %s: %-40s %+.2f +- %.2f  -> %s" % (bots[0], spec, m_, se, verdict))
     else:
         by = {}
         for o in out:

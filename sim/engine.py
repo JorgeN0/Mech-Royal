@@ -341,15 +341,18 @@ class Match:
         alive = self.alive_mechs()
         for o in alive:
             s = set()
+            light = getattr(o.ctrl, "light_obs", False)
             for m in alive:
                 if m is o:
                     continue
+                if light and self.mode == "practice" and m.id != self.hero:
+                    continue  # the house squad only looks for the hero
                 if abs(m.pos[0] - o.pos[0]) > 260 or abs(m.pos[1] - o.pos[1]) > 260:
                     continue
                 _, h = self.size(m)
                 if self.can_see(o, m.pos[0], m.pos[1], m.pos[2] + h * 0.5, m.pos[2] + h):
                     s.add(m.id)
-            for n in self.npcs:
+            for n in ([] if light else self.npcs):
                 if abs(n["pos"][0] - o.pos[0]) > 210 or abs(n["pos"][1] - o.pos[1]) > 210:
                     continue
                 h = self.cfg["npc"]["height"]
@@ -386,16 +389,17 @@ class Match:
             if n["id"] in vis[m.id] or self.t - m.memory.get(n["id"], -99) <= mem_s:
                 mechs.append({"id": n["id"], "kind": "npc", "pos": [round(v, 2) for v in n["pos"]], "vel": list(n["vel"]),
                               "aim": [n["aim"], 0.0], "hp": round(n["hp"]), "max_hp": self.cfg["npc"]["hp"]})
-        projs = []
-        for p in self.projectiles:
-            if p["owner"] == m.id:
-                continue
-            if self._visible_pt(m, p["pos"], 0.2):
-                projs.append({"id": p["id"], "kind": p["kind"], "pos": [round(v, 2) for v in p["pos"]],
-                              "vel": [round(v, 2) for v in p["vel"]]})
-        crates = [{"id": c["id"], "pos": c["pos"], "hp": round(c["hp"])} for c in self.crates if self._visible_pt(m, c["pos"], 2.4)]
-        cubes = [{"id": c["id"], "pos": c["pos"]} for c in self.cubes if self._visible_pt(m, c["pos"], 0.6)]
-        picks = [{"id": p["id"], "kind": p["kind"], "pos": p["pos"]} for p in self.pickups if self._visible_pt(m, p["pos"], 0.8)]
+        projs, crates, cubes, picks = [], [], [], []
+        if not getattr(m.ctrl, "light_obs", False):  # stand-in bots never look at loot or projectiles
+            for p in self.projectiles:
+                if p["owner"] == m.id:
+                    continue
+                if self._visible_pt(m, p["pos"], 0.2):
+                    projs.append({"id": p["id"], "kind": p["kind"], "pos": [round(v, 2) for v in p["pos"]],
+                                  "vel": [round(v, 2) for v in p["vel"]]})
+            crates = [{"id": c["id"], "pos": c["pos"], "hp": round(c["hp"])} for c in self.crates if self._visible_pt(m, c["pos"], 2.4)]
+            cubes = [{"id": c["id"], "pos": c["pos"]} for c in self.cubes if self._visible_pt(m, c["pos"], 0.6)]
+            picks = [{"id": p["id"], "kind": p["kind"], "pos": p["pos"]} for p in self.pickups if self._visible_pt(m, p["pos"], 0.8)]
         ph = self.zone_state()
         wl = []
         for wp in m.weapons:
@@ -802,10 +806,19 @@ class Match:
         self._sound("mortar", m.pos, m.id)
 
     def _targets(self, exclude):
-        """All damageable things: (kind, obj, cx, cy, z0, z1, r)."""
+        """All damageable things: (kind, obj, cx, cy, z0, z1, r). Cached per tick (positions change only in _move)."""
+        c = getattr(self, "_tg_cache", None)
+        if c is None or c[0] != self.tick:
+            c = (self.tick, self._targets_all())
+            self._tg_cache = c
+        if exclude is None or exclude < 0:
+            return [tg for tg in c[1] if tg[0] != "mech" or tg[1].alive]
+        return [tg for tg in c[1] if tg[0] != "mech" or (tg[1].alive and tg[1].id != exclude)]
+
+    def _targets_all(self):
         out = []
         for o in self.mechs:
-            if o.alive and o.id != exclude:
+            if o.alive:
                 r, h = self.size(o)
                 out.append(("mech", o, o.pos[0], o.pos[1], o.pos[2], o.pos[2] + h, r))
         nc = self.cfg["npc"]

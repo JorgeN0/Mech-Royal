@@ -50,8 +50,16 @@ class Squad:
         return set(b.id for b in alive[:n])
 
 
+class SoloSquad(Squad):
+    """A squad of one, for free-for-all: always hunting."""
+
+    def active(self, t):
+        return set(b.id for b in self.members)
+
+
 class HouseBot:
     kind = "house"
+    light_obs = True  # the engine may skip loot/projectile lists for us
 
     def __init__(self, squad, mech_id, level, cfg, seed):
         self.squad = squad
@@ -203,3 +211,22 @@ class HouseBot:
         ex, ey = p[best][0] - x, p[best][1] - y
         e = hyp(ex, ey)
         return (ex / e, ey / e) if e > 0.3 else (dx / d, dy / d)
+
+
+class SoloBot(HouseBot):
+    """Free-for-all stand-in for an aggressive opponent (and the expert bots that fill empty final slots):
+    hunts the nearest mech it can see or last saw, otherwise plays the zone."""
+
+    def __init__(self, mech_id, level, cfg, seed, world):
+        super().__init__(SoloSquad(None, world, seed), mech_id, level, cfg, seed)
+        self.squad.add(self)
+        self.name = "solo-" + level
+
+    def act(self, obs):
+        x, y = obs["self"]["pos"][0], obs["self"]["pos"][1]
+        cands = [m for m in obs["mechs"] if m["kind"] == "mech"]
+        if cands:
+            self.squad.hero = min(cands, key=lambda m: hyp(m["pos"][0] - x, m["pos"][1] - y))["id"]
+        elif self.squad.hero_seen is not None and obs["t"] - self.squad.hero_seen[0] > 10.0:
+            self.squad.hero_seen = None  # stale: stop chasing a ghost
+        return super().act(obs)
