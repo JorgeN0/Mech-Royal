@@ -92,6 +92,12 @@ PARAMS = {
     "scoot_r": 30.0,        # ... only to cover this close
     "hidden_reload": 0.0,   # 1 = top up the magazine whenever the target is out of sight
     "anti_flank": 0.0,      # >0: weight of stepping away from two attackers that are on opposite sides of us
+    "hunt": 1.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
+    "hunt_s": 150.0,        # ... until this time (s)
+    "hunt_reach": 300.0,    # ... and walk this far for a remembered laser while hunting
+    "laser_tol": 0.8,       # release the laser when aim error < atan(tol * target radius / distance)
+    "laser_lead": 0.08,     # seconds of target motion to lead the (hitscan) laser by
+    "upg_laser": 0.0,       # 1 = with a laser in hand, take laser damage/charge upgrades first
     "anchor": 0.0,          # 1 = Siege-style rooftop anchor: climb a roof inside the next circle and hold its centre
     "anchor_laser": 1.0,    # ... only once we hold a laser (0 = with any loadout)
     "anchor_t": 0.0,        # ... not before this time (s)
@@ -182,6 +188,8 @@ class Bot:
         self.known_pk = {}  # pickup id -> (kind, pos); weapons on the ground never despawn
         self.ffa = False  # set once we believe this is a free-for-all
         self.ffa_t = None
+        self.visited = []  # (x, y) of places we scanned from, for the laser hunt
+        self.hunt_goal = None
         self.known_npc = {}  # drone id -> pos (drones stay near home)
         self.known_crate = {}  # crate id -> pos (crates never move)
         # telemetry, written into the debug drawing (downloadable by our team after real matches)
@@ -225,7 +233,7 @@ class Bot:
     # ------------------------------------------------------------------ main
     def act(self, obs):
         t0 = time.perf_counter()
-        self.deadline = t0 + 0.028
+        self.deadline = t0 + 0.014  # budget for the time-sliced searches; the 1-CPU match box is slower than ours
         act = {"tick": obs["tick"]}
         try:
             self._act(obs, act)
@@ -684,6 +692,8 @@ class Bot:
                 continue
             d = hyp(p[0] - x, p[1] - y)
             r_ok = max(reach, P["laser_swap_r"]) if k == "laser" else reach  # the laser is worth a detour
+            if k == "laser" and P["hunt"] and self.t < P["hunt_s"]:
+                r_ok = max(r_ok, P["hunt_reach"])
             if d > r_ok or not self._inside_live(p[0], p[1], 10):
                 continue
             s = d - self.P["laser_bonus"] * loot_rank(k, self.P)
@@ -737,7 +747,40 @@ class Bot:
                         best, bs = p, d
             if best is not None:
                 return "farm", (best[0], best[1]), 1.0, False
+        # 6) laser hunt: no laser yet, so go and look where we have not looked
+        if self.P["hunt"] and self.t < self.P["hunt_s"] and not any(w and w.get("kind") == "laser" for w in self.weap):
+            g = self._hunt_goal()
+            if g is not None:
+                return "hunt", g, 1.0, False
         return None
+
+    def _hunt_goal(self):
+        """Next exploration point: free ground ~120 m away, inside the safe circle, far from where we already looked."""
+        x, y = self.pos[0], self.pos[1]
+        t = self.t
+        if not self.visited or hyp(self.visited[-1][0] - x, self.visited[-1][1] - y) > 60.0:
+            self.visited.append((x, y))
+        g = self.hunt_goal
+        if g is not None and hyp(g[0] - x, g[1] - y) > 8.0 and self._inside_safe(g[0], g[1]):
+            return g
+        if g is not None:
+            self.next_scan_t = t  # arrived: look around (the idle aim does a 360-degree sweep)
+        w = self.world
+        best, bs = None, -1.0
+        for k in range(12):
+            a = k * TAU / 12
+            for r in (120.0, 80.0):
+                px, py = x + r * math.cos(a), y + r * math.sin(a)
+                if not self._inside_safe(px, py, -10.0):
+                    continue
+                if w is not None and not w.free_xy(px, py):
+                    continue
+                s_ = min(hyp(px - vx, py - vy) for vx, vy in self.visited)
+                if s_ > bs:
+                    best, bs = (px, py), s_
+                break
+        self.hunt_goal = best
+        return best
 
     def _near_weapon(self, reach):
         """Goal (x, y) of a remembered weapon within reach if we hold no secondary, else None."""
@@ -834,7 +877,7 @@ class Bot:
                 s = ring + 25.0 * abs(wrap(a - away)) - (0 if self._inside_safe(px, py) else -30)
                 if s < bs:
                     best, bs = (px, py), s
-            if time.perf_counter() > self.deadline - 0.010:
+            if time.perf_counter() > self.deadline:
                 break
         if best is None:
             best = (x + 25 * math.cos(away), y + 25 * math.sin(away))
@@ -1194,13 +1237,13 @@ class Bot:
                 charge = float(lw.get("charge", 0) or 0)
                 full = float(ls.get("charge", 0.75))
                 if charge > 0:
-                    yaw, pit = self._direct_aim(tp, tv, zoff, 0.08)
+                    yaw, pit = self._direct_aim(tp, tv, zoff, self.P["laser_lead"])
                     if not self.P["laser_gun_aim"] or charge >= full * 0.8:
                         aim = (yaw, pit)  # (with laser_gun_aim the gun keeps leading until the charge is nearly full)
                         aimed_weapon = "laser"
                     err_y = abs(wrap(ay - yaw))
                     err_p = abs(ap - pit)
-                    tol = math.atan2(rad * 0.8, max(d3, 1.0))
+                    tol = math.atan2(rad * self.P["laser_tol"], max(d3, 1.0))
                     hold_max = float(ls.get("hold_s", 2)) + full - 0.25
                     if (charge >= full * 0.95 and err_y < tol and err_p < tol * 1.6) or charge >= hold_max:
                         fire[li] = False  # release
@@ -1400,6 +1443,8 @@ class Bot:
             s = UPGRADE_PRIORITY.get(c.get("id"), 10)
             if self.P["upg_offense"] and c.get("id") in ("gun_rate", "gun_damage", "laser_damage", "laser_charge"):
                 s += 60
+            if self.P["upg_laser"] and c.get("id") in ("laser_damage", "laser_charge") and                     any(w and w.get("kind") == "laser" for w in self.weap):
+                s += 120 if c.get("id") == "laser_damage" else 110
             if s > bs:
                 best, bs = i, s
         return best

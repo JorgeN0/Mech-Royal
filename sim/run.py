@@ -84,11 +84,20 @@ def run_one(args):
     res = m.run()
     wall = time.perf_counter() - t0
     timing = {c.name: (c.worst_ms, c.total_ms / max(1, c.n), getattr(c, "worst_at", None)) for c in ctrls if hasattr(c, "worst_ms")}
+    slow = {}
+    for c in ctrls:
+        if hasattr(c, "bot"):
+            sl = slow.setdefault(c.name, {"n": 0, "over": {}, "modes": {}})
+            sl["n"] += c.n
+            for k, v in getattr(c, "slow", {}).items():
+                sl["over"][k] = sl["over"].get(k, 0) + v
+            for k, v in getattr(c, "slow_modes", {}).items():
+                sl["modes"][k] = sl["modes"].get(k, 0) + v
     ffa = {}
     for c in ctrls:
         if hasattr(c, "bot"):
             ffa.setdefault(c.name, []).append(getattr(c.bot, "ffa_t", None))
-    return {"seed": seed, "hero": hero, "spec": bots[0], "res": res, "wall": wall, "t_end": m.t, "timing": timing, "ffa": ffa,
+    return {"seed": seed, "hero": hero, "spec": bots[0], "res": res, "wall": wall, "t_end": m.t, "timing": timing, "ffa": ffa, "slow": slow,
             "log": m.log[:5]}
 
 
@@ -192,6 +201,18 @@ def main():
         for k, (worst, avg, at) in o["timing"].items():
             w0, a0, n0, at0 = tm.get(k, (0, 0, 0, None))
             tm[k] = (max(w0, worst), a0 + avg, n0 + 1, at if worst > w0 else at0)
+    agg = {}
+    for o in out:
+        for k, sl in o.get("slow", {}).items():
+            g = agg.setdefault(k, {"n": 0, "over": {}, "modes": {}})
+            g["n"] += sl["n"]
+            for kk, v in sl["over"].items():
+                g["over"][kk] = g["over"].get(kk, 0) + v
+            for kk, v in sl["modes"].items():
+                g["modes"][kk] = g["modes"].get(kk, 0) + v
+    for k, g in agg.items():
+        print("act time %-40s decisions %d, over 10/20/35/50 ms: %s  slow (>20 ms) by mode: %s" % (
+            k, g["n"], "/".join(str(g["over"].get(l, 0)) for l in (10, 20, 35, 50)), g["modes"]))
     for k, (w, a_, n, at) in tm.items():
         print("act ms %-40s avg %.2f worst %.1f (t, mode at worst: %s)" % (k, a_ / n, w, at))
     print("sim wall %.0f s for %d matches (%.1f s/match/worker)" % (wall, len(out), statistics.mean(o["wall"] for o in out)))

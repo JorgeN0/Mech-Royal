@@ -79,6 +79,14 @@ class BotCtrl:
         mechfight.draw.take()
         self.n += 1
         self.total_ms += ms
+        self.slow = getattr(self, "slow", {})
+        for lim in (10, 20, 35, 50):
+            if ms > lim:
+                self.slow[lim] = self.slow.get(lim, 0) + 1
+        if ms > 20:
+            k = getattr(self.bot, "mode", "?")
+            self.slow_modes = getattr(self, "slow_modes", {})
+            self.slow_modes[k] = self.slow_modes.get(k, 0) + 1
         if ms > self.worst_ms:
             self.worst_ms = ms
             self.worst_at = (round(obs["t"], 1), getattr(self.bot, "mode", "?"))
