@@ -107,6 +107,7 @@ PARAMS = {
     "hunt_reach": 300.0,    # ... and walk this far for a remembered laser while hunting
     "laser_tol": 0.8,       # release the laser when aim error < atan(tol * target radius / distance)
     "laser_lead": 0.08,     # seconds of target motion to lead the (hitscan) laser by
+    "laser_los": 0.0,       # 1 = charge/release the laser only with a clear muzzle line (aim at the head if the body is hidden)
     "upg_laser": 0.0,       # 1 = with a laser in hand, take laser damage/charge upgrades first
     "ambush_move": 0.0,     # >0: strafe sideways at this fraction of speed while waiting pre-aimed (do not stand still)
     "loot_strafe": 0.0,     # 1 = strafe while shooting crates (do not stand still)
@@ -1327,8 +1328,18 @@ class Bot:
                 ls = lw.get("stats", {})
                 charge = float(lw.get("charge", 0) or 0)
                 full = float(ls.get("charge", 0.75))
+                lz, clear = zoff, True
+                if self.P["laser_los"] and self.world is not None:
+                    # the beam leaves the muzzle: a target whose head shows over a wall is not a laser target
+                    w = self.world
+                    th = target.get("h", 9)
+                    if not w.los((mx, my, mz), (tp[0], tp[1], tp[2] + zoff)):
+                        if w.los((mx, my, mz), (tp[0], tp[1], tp[2] + th * 0.85)):
+                            lz = th * 0.85
+                        else:
+                            clear = False
                 if charge > 0:
-                    yaw, pit = self._direct_aim(tp, tv, zoff, self.P["laser_lead"])
+                    yaw, pit = self._direct_aim(tp, tv, lz, self.P["laser_lead"])
                     if not self.P["laser_gun_aim"] or charge >= full * 0.8:
                         aim = (yaw, pit)  # (with laser_gun_aim the gun keeps leading until the charge is nearly full)
                         aimed_weapon = "laser"
@@ -1336,11 +1347,11 @@ class Bot:
                     err_p = abs(ap - pit)
                     tol = math.atan2(rad * self.P["laser_tol"], max(d3, 1.0))
                     hold_max = float(ls.get("hold_s", 2)) + full - 0.25
-                    if (charge >= full * 0.95 and err_y < tol and err_p < tol * 1.6) or charge >= hold_max:
+                    if (charge >= full * 0.95 and err_y < tol and err_p < tol * 1.6 and clear) or charge >= hold_max:
                         fire[li] = False  # release
                     else:
                         fire[li] = True
-                elif float(lw.get("cooldown", 0)) <= 0 and d3 < float(ls.get("range", 280)) * 0.95 and self.mode not in ("zone", "retreat"):
+                elif float(lw.get("cooldown", 0)) <= 0 and d3 < float(ls.get("range", 280)) * 0.95 and self.mode not in ("zone", "retreat")                         and clear:
                     fire[li] = True  # start charging
 
             # mortar: lob when ready and the target is mid range

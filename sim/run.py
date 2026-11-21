@@ -44,6 +44,9 @@ def run_one(args):
     from sim.engine import Match
     from sim.loader import BotCtrl, load_bot_class
     for k, v in (overrides or {}).items():
+        if k == "_squad":
+            housebot.ORDER = housebot.ORDERS[v]
+            continue
         lvl, key = k.split(".")
         if lvl == "sched":  # e.g. sched.per_kill=0.5 sched.all_s=360
             housebot.SCHEDULE[key] = v
@@ -114,6 +117,7 @@ def main():
     ap.add_argument("--seed", type=int, default=1000)
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--set", nargs="*", default=[], help="house overrides, e.g. easy.sigma=0.05")
+    ap.add_argument("--squad", default="classic", help="house lineup: classic (old) or real (measured personas)")
     ap.add_argument("--json", help="write raw results here")
     a = ap.parse_args()
     bots = a.bots if a.bots else [a.bot]
@@ -121,6 +125,7 @@ def main():
     for s in a.set:
         k, v = s.split("=")
         overrides[k] = float(v) if v.replace(".", "", 1).replace("-", "", 1).isdigit() else (v == "True")
+    overrides["_squad"] = a.squad
     if a.mode == "practice":  # every spec plays the same seeds
         jobs = [(a.mode, [spec], a.seed + i, overrides) for spec in bots for i in range(a.n)]
     else:

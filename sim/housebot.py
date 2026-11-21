@@ -13,8 +13,20 @@ LEVELS = {
     "medium": dict(sigma=0.04, lead=0.6, react=0.5, strafe=True, pref=55.0),
     "hard": dict(sigma=0.024, lead=1.0, react=0.3, strafe=True, pref=60.0),
     "expert": dict(sigma=0.012, lead=1.0, react=0.15, strafe=True, pref=60.0),
+    # measured from broadcast lobbies running the server's house AI (tools/fit_house.py, tools/lead_test.py):
+    # all lead, sigma fitted to real gun accuracy by distance, fire at ~80 m, heading changes every 0.6 s (strong)
+    # or ~1.3 s (Skirmish/Astra), and they never stand still in a fight
+    "skirmish": dict(sigma=0.035, lead=1.0, react=0.5, strafe=True, pref=80.0, flip=(0.9, 1.8)),
+    "astra": dict(sigma=0.025, lead=1.0, react=0.4, strafe=True, pref=80.0, flip=(0.8, 1.6)),
+    "crimson": dict(sigma=0.012, lead=1.0, react=0.3, strafe=True, pref=80.0, flip=(0.4, 0.8)),
+    "expertp": dict(sigma=0.012, lead=1.0, react=0.25, strafe=True, pref=77.0, flip=(0.4, 0.8)),
+    "red": dict(sigma=0.012, lead=1.0, react=0.25, strafe=True, pref=80.0, flip=(0.4, 0.8)),
 }
-ORDER = ["easy"] * 4 + ["medium"] * 4 + ["hard"] * 4 + ["expert"] * 3
+ORDERS = {
+    "classic": ["easy"] * 4 + ["medium"] * 4 + ["hard"] * 4 + ["expert"] * 3,
+    "real": ["skirmish"] * 3 + ["astra"] * 3 + ["crimson"] * 3 + ["expertp"] * 3 + ["red"] * 3,
+}
+ORDER = ORDERS["classic"]
 # calibrated 2026-11-21 with trees on: kit example 1.43 (real 1.15), v1 3.64 (real 3.38)
 SCHEDULE = dict(first_s=12.0, per_kill=0.5, all_s=300.0)
 
@@ -177,7 +189,8 @@ class HouseBot:
                 if self.p["strafe"]:
                     if t > self.flip_t:
                         self.strafe = -self.strafe
-                        self.flip_t = t + self.rng.uniform(1.0, 2.5)
+                        lo, hi = self.p.get("flip", (1.0, 2.5))
+                        self.flip_t = t + self.rng.uniform(lo, hi)
                     mx += -math.sin(b) * self.strafe
                     my += math.cos(b) * self.strafe
                 n = hyp(mx, my)
