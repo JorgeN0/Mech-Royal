@@ -182,3 +182,28 @@ if __name__ == "__main__":
     if out:
         with open(out, "w") as f:
             json.dump(res, f, default=str)
+    if len(res) > 1 or "--agg" in sys.argv:
+        # top 6 finishers vs the rest, pooled over matches (showdowns are FFA among top teams)
+        groups = {"top6": [], "7-16": []}
+        for r in res:
+            for s in r["mechs"].values():
+                groups["top6" if s["place"] <= 6 else "7-16"].append(s)
+        print("\n== pooled over %d matches" % len(res))
+        for g, L in groups.items():
+            if not L:
+                continue
+            n = len(L)
+            life = [max(1.0, s["death_t"] or 1) for s in L]
+            las = sum(1 for s in L if s["held"].get("laser", 0) > 0.5 * (s["death_t"] or 1)) / n
+            lig = sum(1 for s in L if s["held"].get("lightning", 0) > 0.5 * (s["death_t"] or 1)) / n
+            none = sum(1 for s in L if not any(k != "gun" for k in s["held"])) / n
+            sil = sum(s["silent_s"] / l for s, l in zip(L, life)) / n
+            dist = sum(s["dist_m"] / l for s, l in zip(L, life)) / n
+            kills = sum(s["kills"] for s in L) / n
+            hd = sorted(s["hit_d_med"] for s in L if s["hit_d_med"])
+            ga = sum(s.get("hits_gun", 0) for s in L) / max(1, sum(s.get("fire_gun", 0) for s in L))
+            la = sum(s.get("lhit", 0) for s in L) / max(1, sum(s.get("fire_laser", 0) for s in L))
+            print("%-5s n=%3d kills %.2f  laser>half %.0f%%  lightning>half %.0f%%  no-secondary %.0f%%  silent %.0f%%  "
+                  "speed %.1f m/s  hit dist med %s  gun acc %.0f%%  laser acc %.0f%%" % (
+                      g, n, kills, 100 * las, 100 * lig, 100 * none, 100 * sil, dist,
+                      "%.0f" % hd[len(hd) // 2] if hd else "-", 100 * ga, 100 * la))

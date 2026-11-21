@@ -95,6 +95,10 @@ PARAMS = {
     "hidden_reload": 1.0,   # 1 = top up the magazine whenever the target is out of sight
     "scoot_hit_hp": 0.0,    # >0: also duck into nearby cover when hit while below this HP fraction
     "cover_tether": 0.0,    # >0: in a visible fight, drift to stay within this many m of the nearest hiding spot
+    "sentinel": 0.0,        # 1 = top-bot style: once we hold a laser (or after sentinel_t), stop roaming:
+                            #     only cubes / nearby weapons, then hold a spot by a building; steady laser fights
+    "sentinel_t": 100.0,    # ... also switch on after this many seconds without a laser
+    "sentinel_strafe": 0.35,  # fight strafe speed factor while sentineling with a laser at range
     "anti_flank": 1.2,      # >0: weight of stepping away from two attackers that are on opposite sides of us
     "hunt": 1.0,            # 1 = laser hunt: with no laser, explore unseen ground (scan on arrival) early on (sim +0.2/+0.46)
     "hunt_s": 150.0,        # ... until this time (s)
@@ -193,6 +197,7 @@ class Bot:
         self.cover_pt = None
         self.cover_t = -1e9
         self.cover_ok = False
+        self.sentinel_on = False
         self.last_move = (0.0, 0.0)
         self.cmd_speed = 0.0
         self.worst_ms = 0.0
@@ -592,6 +597,8 @@ class Bot:
         boost_ok = self.energy > 25
 
         P = self.P
+        self.sentinel_on = bool(P["sentinel"]) and (t > P["sentinel_t"] or
+                                                    any(w and w.get("kind") == "laser" for w in self.weap))
         engage_r = P["engage_r"] if alive > 5 else min(90.0, P["engage_r"])
         attacked = t - self.last_mech_dmg_t < 3.0
         threat = target is not None and (target["dh"] < engage_r or target["id"] in self.attackers)
@@ -739,6 +746,8 @@ class Bot:
             # first weapon: run for it (energy is otherwise unused early)
             first = cur == 0 and self.t < P["weapon_early_s"] and self.energy > 20
             return "weapon", (best[0], best[1]), 1.0, first
+        if self.sentinel_on:
+            return None  # no drone/crate farming or hunting trips: hold our spot
         # 3) NPC drones (2 cubes each) only when healthy: hurt, we sit still and regenerate instead
         capped = self.me.get("cubes", 0) >= self.P["farm_cap"]
         if hp > self.P["farm_npc_hp"] and self.t < 330 and not capped:
@@ -1085,6 +1094,8 @@ class Bot:
             if mode == "fight" and P["hit_backoff_s"] > 0 and t - self.last_mech_dmg_t < P["hit_backoff_s"]:
                 radial = -1.0  # just got hit: back off (still facing and shooting), like a human trading damage
             sw = 1.0 if radial >= 0 else 1.0 + (P["kite_strafe"] - 1.0) * min(1.0, -radial * 2.0)
+            if mode == "fight" and self.sentinel_on and d > 50.0 and any(w and w.get("kind") == "laser" for w in self.weap):
+                sw *= P["sentinel_strafe"]  # steady: slow side-steps keep the laser on target
             px, py = -math.sin(b) * self.strafe * sw, math.cos(b) * self.strafe * sw
             mx = math.cos(b) * radial + px
             my = math.sin(b) * radial + py
