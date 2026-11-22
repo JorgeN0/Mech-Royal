@@ -64,8 +64,8 @@ def loot_rank(kind, P=None):
 # Tactics knobs (sim/run.py --botset key=value overrides these for experiments)
 PARAMS = {
     "engage_r": 150.0,      # treat mechs closer than this as a fight
-    "retreat_hp": 0.28,     # always retreat below this HP fraction
-    "retreat_mid": 0.5,     # retreat below this if outnumbered or the enemy is healthier
+    "retreat_hp": 0.0,     # always retreat below this HP fraction
+    "retreat_mid": 0.0,     # retreat below this if outnumbered or the enemy is healthier
     "loot_close": 110.0,    # loot only when no enemy is closer than this
     "pref_gun": 100.0,      # preferred fight distance with the gun (sim: 100 > 60)
     "pref_laser": 0.0,       # >0: preferred fight distance while we hold a laser (house bots miss beyond 130 m)
@@ -144,7 +144,7 @@ PARAMS = {
 
 # Overrides once we decide this is a free-for-all (the final) rather than practice vs the house squad.
 # Sim: farming and focusing the wounded help vs the squad (+0.5) but hurt in FFA (-0.6).
-FFA_PARAMS = {"farm_r": 0.0, "tgt_hp_w": 60.0}
+FFA_PARAMS = {"farm_r": 0.0, "tgt_hp_w": 60.0, "retreat_hp": 0.28, "retreat_mid": 0.5}
 ALERT_SOUNDS = {"gun", "mortar", "explosion", "laser", "laser_charge", "lightning", "step", "boost", "jet", "reload"}
 
 
