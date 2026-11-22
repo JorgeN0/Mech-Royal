@@ -107,7 +107,7 @@ PARAMS = {
     "hunt_reach": 300.0,    # ... and walk this far for a remembered laser while hunting
     "laser_tol": 0.8,       # release the laser when aim error < atan(tol * target radius / distance)
     "laser_lead": 0.08,     # seconds of target motion to lead the (hitscan) laser by
-    "laser_los": 0.0,       # 1 = charge/release the laser only with a clear muzzle line (aim at the head if the body is hidden)
+    "laser_los": 1.0,       # 1 = charge/release the laser only with a clear muzzle line (aim at the head if the body is hidden)
     "upg_laser": 0.0,       # 1 = with a laser in hand, take laser damage/charge upgrades first
     "ambush_move": 0.0,     # >0: strafe sideways at this fraction of speed while waiting pre-aimed (do not stand still)
     "loot_strafe": 0.0,     # 1 = strafe while shooting crates (do not stand still)
