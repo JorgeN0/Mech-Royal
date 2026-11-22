@@ -121,7 +121,7 @@ PARAMS = {
     "hold_move": 0.0,       # >0: at the hold spot keep sliding (this share of walk speed; <0.43 stays silent) instead of standing
     "cube_grab": 0.0,       # >0: mid-fight, walk over cubes within this many m (still shooting); kills drop cubes + 2
     "retreat_cover": 0.0,   # 1: when retreating but no cover is within reach, keep fighting instead of running in the open
-    "cover_multi": 0.0,     # >0: cover must also hide us from the other enemies within 160 m (score penalty per enemy that sees it)
+    "cover_multi": 40.0,     # >0: cover must also hide us from the other enemies within 160 m (score penalty per enemy that sees it)
     "upg_order": 0.0,       # 0 = UPGRADE_PRIORITY; 1/2/3 = UPGRADE_ORDERS (sustain-first / gun-first / defense-first)
     "upg_laser": 0.0,       # 1 = with a laser in hand, take laser damage/charge upgrades first
     "ambush_move": 0.0,     # >0: strafe sideways at this fraction of speed while waiting pre-aimed (do not stand still)
