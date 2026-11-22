@@ -41,6 +41,15 @@ UPGRADE_PRIORITY = {
     "lightning_range": 38, "reactor": 36, "gun_velocity": 34, "mortar_reload": 30,
     "lightning_chain": 28, "mortar_velocity": 22, "mortar_splash": 20, "laser_pierce": 18,
 }
+# alternative orders (upg_order knob), from the real upgrade table: gun_mag is +31% gun DPS (12 -> 20 rounds, faster
+# reload), plating +15% HP beats armor's -8% damage, two nanites give 115 HP/s regen after 2 s instead of 45 after 5
+_REST = ["servos", "gyros", "sensors", "capacitor", "jets", "lightning_range", "reactor", "gun_velocity",
+         "mortar_reload", "lightning_chain", "mortar_velocity", "mortar_splash", "laser_pierce"]
+UPGRADE_ORDERS = {
+    1: ["nanites", "plating", "gun_mag", "gun_damage", "laser_damage", "armor", "laser_charge", "lightning_efficiency", "gun_rate"],
+    2: ["gun_mag", "gun_damage", "plating", "laser_damage", "nanites", "laser_charge", "armor", "lightning_efficiency", "gun_rate"],
+    3: ["plating", "nanites", "armor", "gun_mag", "gun_damage", "laser_damage", "laser_charge", "lightning_efficiency", "gun_rate"],
+}
 LOOT_RANK = {"laser": 3, "lightning": 2, "mortar": 2}
 
 
@@ -107,7 +116,11 @@ PARAMS = {
     "hunt_reach": 300.0,    # ... and walk this far for a remembered laser while hunting
     "laser_tol": 0.8,       # release the laser when aim error < atan(tol * target radius / distance)
     "laser_lead": 0.08,     # seconds of target motion to lead the (hitscan) laser by
+    "gun_los": 0.0,         # 1 = fire the gun only if the actual aim ray is clear; aim at the head if the body is hidden
     "laser_los": 0.0,       # 1 = charge/release the laser only with a clear muzzle line (aim at the head if the body is hidden)
+    "hold_move": 0.0,       # >0: at the hold spot keep sliding (this share of walk speed; <0.43 stays silent) instead of standing
+    "cube_grab": 0.0,       # >0: mid-fight, walk over cubes within this many m (still shooting); kills drop cubes + 2
+    "upg_order": 0.0,       # 0 = UPGRADE_PRIORITY; 1/2/3 = UPGRADE_ORDERS (sustain-first / gun-first / defense-first)
     "upg_laser": 0.0,       # 1 = with a laser in hand, take laser damage/charge upgrades first
     "ambush_move": 0.0,     # >0: strafe sideways at this fraction of speed while waiting pre-aimed (do not stand still)
     "loot_strafe": 0.0,     # 1 = strafe while shooting crates (do not stand still)
@@ -647,6 +660,17 @@ class Bot:
             grab = self._near_weapon(35.0)
             if grab is not None:
                 return "weapon", grab, 1.0, False  # unarmed and a weapon is right here: take it, still shooting
+            if P["cube_grab"] > 0:
+                bc, bd = None, P["cube_grab"]
+                for c in obs.get("cubes") or ():
+                    cp = c["pos"]
+                    if abs(cp[2] - self.pos[2]) > 3.5:
+                        continue
+                    dc = hyp(cp[0] - x, cp[1] - y)
+                    if dc < bd and self._inside_live(cp[0], cp[1], 8):
+                        bc, bd = cp, dc
+                if bc is not None:
+                    return "cube", (bc[0], bc[1]), 1.0, False  # +4% HP (healed) and damage per cube, still shooting
             has_lightning = any(w and w.get("kind") == "lightning" for w in self.weap)
             fboost = target["los"] and not has_lightning and self.energy > P["fight_boost_e"]
             pref_d = P["pref_laser"] if (P["pref_laser"] > 0 and any(w and w.get("kind") == "laser" for w in self.weap)) else P["pref_gun"]
@@ -1163,6 +1187,15 @@ class Bot:
         d = hyp(gx - x, gy - y)
         if mode in ("hold", "heal"):
             if d < 4.0:
+                if self.P["hold_move"] > 0:
+                    # never a still target: lead-aiming bots hit a standing mech every time
+                    if t > self.strafe_flip_t:
+                        self.strafe = -self.strafe
+                        self.strafe_flip_t = t + self.rng.uniform(self.P["strafe_min"], self.P["strafe_max"])
+                        self.hold_axis = getattr(self, "hold_axis", self.rng.uniform(0, TAU)) + self.rng.uniform(-0.6, 0.6)
+                    ax = getattr(self, "hold_axis", 0.0)
+                    vx, vy = self._avoid(math.cos(ax) * self.strafe, math.sin(ax) * self.strafe, flip=True)
+                    return vx * self.P["hold_move"], vy * self.P["hold_move"]
                 return 0.0, 0.0
             # walk quietly once close to the hold spot
             speed = min(speed, 4.4 / max(1.0, self.walk)) if d < 35.0 else speed
@@ -1375,6 +1408,11 @@ class Bot:
                 spd = float(gs.get("speed", 252))
                 rng_ = float(gs.get("range", 230))
                 yaw, pit, dd, ip = self._lead_aim(tp, tv, zoff, spd)
+                if self.P["gun_los"] and self.world is not None and not self.world.los((mx, my, mz), ip):
+                    hz = target.get("h", 9) * 0.85  # body hidden: try the head
+                    y2, p2, d2, ip2 = self._lead_aim(tp, tv, hz, spd)
+                    if self.world.los((mx, my, mz), ip2):
+                        yaw, pit, dd, ip = y2, p2, d2, ip2
                 if aim is None:
                     aim = (yaw, pit)
                     aimed_weapon = "gun"
@@ -1386,7 +1424,14 @@ class Bot:
                     tol_y = math.atan2(rad * 0.85, max(dd, 1.0)) + 0.004
                     tol_p = math.atan2(zoff * 0.85, max(dd, 1.0)) + 0.004
                     if err_y < tol_y and err_p < tol_p:
-                        if self.world is None or self.world.los((mx, my, mz), ip):
+                        ok = self.world is None or self.world.los((mx, my, mz), ip)
+                        if ok and self.P["gun_los"] and self.world is not None:
+                            # the bullet follows the turret's actual aim, which is still slewing: check that ray
+                            L = max(1.0, dd - 3.0)
+                            ca = math.cos(ap)
+                            ok = self.world.los((mx, my, mz), (mx + ca * math.cos(ay) * L, my + ca * math.sin(ay) * L,
+                                                               mz + math.sin(ap) * L))
+                        if ok:
                             fire[gi] = True
 
             # lightning: needs only the yaw cone and range
@@ -1541,7 +1586,14 @@ class Bot:
     def _pick_upgrade(self, offer):
         ch = offer.get("choices") or []
         best, bs = 0, -1e9
+        order = UPGRADE_ORDERS.get(int(self.P["upg_order"]))
         for i, c in enumerate(ch):
+            if order:
+                lst = order + _REST
+                s = 200 - lst.index(c.get("id")) if c.get("id") in lst else 10
+                if s > bs:
+                    best, bs = i, s
+                continue
             s = UPGRADE_PRIORITY.get(c.get("id"), 10)
             if self.P["upg_offense"] and c.get("id") in ("gun_rate", "gun_damage", "laser_damage", "laser_charge"):
                 s += 60
