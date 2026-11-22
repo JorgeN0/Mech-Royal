@@ -120,6 +120,8 @@ PARAMS = {
     "laser_los": 0.0,       # 1 = charge/release the laser only with a clear muzzle line (aim at the head if the body is hidden)
     "hold_move": 0.0,       # >0: at the hold spot keep sliding (this share of walk speed; <0.43 stays silent) instead of standing
     "cube_grab": 0.0,       # >0: mid-fight, walk over cubes within this many m (still shooting); kills drop cubes + 2
+    "retreat_cover": 0.0,   # 1: when retreating but no cover is within reach, keep fighting instead of running in the open
+    "cover_multi": 0.0,     # >0: cover must also hide us from the other enemies within 160 m (score penalty per enemy that sees it)
     "upg_order": 0.0,       # 0 = UPGRADE_PRIORITY; 1/2/3 = UPGRADE_ORDERS (sustain-first / gun-first / defense-first)
     "upg_laser": 0.0,       # 1 = with a laser in hand, take laser damage/charge upgrades first
     "ambush_move": 0.0,     # >0: strafe sideways at this fraction of speed while waiting pre-aimed (do not stand still)
@@ -656,7 +658,9 @@ class Bot:
             if self.retreating and not weak_one:
                 if on_anchor:
                     return "anchor", self.roof["spot"], 1.0, False  # the roof centre is our cover
-                return "retreat", self._cover_point(target), 1.0, boost_ok and target["los"]
+                cp = self._cover_point(target)
+                if not (P["retreat_cover"] and not self.cover_ok):
+                    return "retreat", cp, 1.0, boost_ok and target["los"]
             grab = self._near_weapon(35.0)
             if grab is not None:
                 return "weapon", grab, 1.0, False  # unarmed and a weapon is right here: take it, still shooting
@@ -952,6 +956,15 @@ class Bot:
             self.cover_pt = (x + 30 * math.cos(away), y + 30 * math.sin(away))
             return self.cover_pt
         teye = (tp[0], tp[1], tp[2] + threat.get("h", 9) * 0.9)
+        others = []
+        if self.P["cover_multi"] > 0:
+            for e in self.enemies:
+                if e is threat or e.get("id") == threat.get("id") or e["dh"] > 160:
+                    continue
+                if e.get("los") or e["id"] in self.attackers:
+                    ep = e["pos"]
+                    others.append((ep[0], ep[1], ep[2] + e.get("h", 9) * 0.9))
+            others = others[:3]
         best, bs = None, 1e18
         self.cover_ok = False
         for ring in (10.0, 20.0, 32.0, 45.0):
@@ -964,6 +977,8 @@ class Bot:
                 if w.los(teye, (px, py, gz + 6.0)):
                     continue
                 s = ring + 25.0 * abs(wrap(a - away)) - (0 if self._inside_safe(px, py) else -30)
+                if others:
+                    s += self.P["cover_multi"] * sum(1 for oe in others if w.los(oe, (px, py, gz + 6.0)))
                 if s < bs:
                     best, bs = (px, py), s
             if time.perf_counter() > self.deadline:
